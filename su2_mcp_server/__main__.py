@@ -4,12 +4,21 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
 from su2_mcp_server.fastmcp_server import build_server
 
-TRANSPORT_CHOICES = ("stdio", "sse", "streamable-http", "http")
+Transport = Literal["stdio", "sse", "streamable-http"]
+TransportInput = Literal["stdio", "sse", "streamable-http", "http"]
+
+TRANSPORT_CHOICES: tuple[TransportInput, ...] = (
+    "stdio",
+    "sse",
+    "streamable-http",
+    "http",
+)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -60,7 +69,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _apply_settings(args: argparse.Namespace) -> tuple[str, str | None, FastMCP]:
+def _apply_settings(args: argparse.Namespace) -> tuple[Transport, str | None, FastMCP]:
     """Create and configure the FastMCP server for the requested transport.
 
     Returns a tuple of the resolved transport identifier, the mount path (when
@@ -73,7 +82,14 @@ def _apply_settings(args: argparse.Namespace) -> tuple[str, str | None, FastMCP]
     server.settings.sse_path = args.sse_path
     server.settings.message_path = args.message_path
 
-    transport = "streamable-http" if args.transport == "http" else args.transport
+    transport: Transport
+    if args.transport == "http":
+        transport = "streamable-http"
+    elif args.transport in ("stdio", "sse", "streamable-http"):
+        transport = args.transport
+    else:  # pragma: no cover - argparse choices prevent this path
+        msg = f"Unsupported transport: {args.transport!s}"
+        raise ValueError(msg)
     mount_path = args.mount_path if transport == "sse" else None
 
     if transport == "streamable-http":
