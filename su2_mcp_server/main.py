@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from mcp.server import Server
-from mcp.server.jsonrpc import AsyncJsonRpcTransport  # type: ignore[import-not-found]
+from mcp.server.jsonrpc import AsyncJsonRpcTransport
 
 from su2_mcp_server.tools import config_tools, results_tools, run_tools, session
 
@@ -46,6 +46,6 @@ async def serve(transport: AsyncJsonRpcTransport) -> None:
 
 
 if __name__ == "__main__":
-    from mcp.server.stdio import stdio_transport  # type: ignore[attr-defined]
+    from mcp.server.stdio import stdio_transport
 
     asyncio.run(serve(stdio_transport()))

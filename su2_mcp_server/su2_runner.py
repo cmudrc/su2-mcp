@@ -111,14 +111,11 @@ class SU2Runner:
 
 def build_last_run_metadata(result: Mapping[str, object]) -> LastRunMetadata:
     """Convert a solver result payload into `LastRunMetadata`."""
-
     exit_code_raw = result.get("exit_code", -1)
     runtime_raw = result.get("runtime_seconds", 0.0)
 
     exit_code = int(exit_code_raw) if isinstance(exit_code_raw, (int, float, str)) else -1
-    runtime_seconds = (
-        float(runtime_raw) if isinstance(runtime_raw, (int, float, str)) else 0.0
-    )
+    runtime_seconds = float(runtime_raw) if isinstance(runtime_raw, (int, float, str)) else 0.0
 
     return LastRunMetadata(
         solver=str(result.get("solver", "")),

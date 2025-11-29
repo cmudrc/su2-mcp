@@ -29,8 +29,6 @@ target-version = ["py311"]
 
 [tool.ruff]
 line-length = 100
-select = ["E", "F", "I", "B", "UP", "N", "C4", "D", "ANN"]
-ignore = []
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "C4", "D", "ANN"]
@@ -45,6 +43,10 @@ python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = ["mcp.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 addopts = "-ra"
