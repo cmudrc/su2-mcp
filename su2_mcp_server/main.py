@@ -2,20 +2,27 @@
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Mapping
+from importlib.metadata import PackageNotFoundError, version
 
-from mcp.server import Server
-from mcp.server.jsonrpc import AsyncJsonRpcTransport
+from mcp.server.fastmcp import FastMCP
 
 from su2_mcp_server.tools import config_tools, results_tools, run_tools, session
 
-SERVER: Any = Server("su2-mcp")
+APP = FastMCP("su2-mcp")
 
 
-def _register_tool(name: str, func: Callable[..., dict[str, object]]) -> None:
-    SERVER.register_tool(name=name, func=func)
+def _register_tool(name: str, func: Callable[..., Mapping[str, object]]) -> None:
+    """Register a tool with the FastMCP application."""
+    APP.add_tool(func, name=name)
+
+
+def _server_version() -> str:
+    """Return the package version, falling back to a development marker."""
+    try:
+        return version("su2-mcp-server")
+    except PackageNotFoundError:
+        return "0.0.0-dev"
 
 
 # Session tools
@@ -40,12 +47,5 @@ _register_tool("read_history_csv", results_tools.read_history_csv)
 _register_tool("sample_surface_solution", results_tools.sample_surface_solution)
 
 
-async def serve(transport: AsyncJsonRpcTransport) -> None:
-    """Serve registered tools using the provided transport."""
-    await SERVER.serve(transport)
-
-
 if __name__ == "__main__":
-    from mcp.server.stdio import stdio_transport
-
-    asyncio.run(serve(stdio_transport()))
+    APP.run(transport="stdio")
