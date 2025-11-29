@@ -36,8 +36,10 @@ pytest
 
 ### Running the server
 
+The server is built with [`FastMCP`](https://github.com/modelcontextprotocol/python-sdk) to expose SU2 tooling with generated JSON Schema metadata. The `create_app` factory in `su2_mcp_server/main.py` wires every tool into a `FastMCP` instance that can run over stdio or other transports supported by the MCP SDK.
+
 ```bash
 python -m su2_mcp_server.main
 ```
 
-The server registers all SU2 tools under the MCP `Server` declared in `su2_mcp_server/main.py` and serves them over stdio when executed directly.
+`python -m su2_mcp_server.main` bootstraps the FastMCP app and serves it over stdio; callers can also import `su2_mcp_server.main.APP` or invoke `create_app()` to embed the server.
