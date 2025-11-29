@@ -6,79 +6,76 @@ from types import SimpleNamespace
 
 from pytest import MonkeyPatch
 
-from su2_mcp_server import main
+from su2_mcp_server import __main__ as cli
 
 
-def test_create_app_applies_server_settings() -> None:
-    """create_app should forward configuration values to FastMCP settings."""
-    app = main.create_app(
-        host="0.0.0.0",
-        port=9001,
-        mount_path="/api",
-        sse_path="/events",
-        message_path="/msg/",
-        streamable_http_path="/mcp-http",
-        json_response=True,
-        stateless_http=True,
-    )
+class FakeServer:
+    """Lightweight stand-in for FastMCP used in CLI tests."""
 
-    assert app.settings.host == "0.0.0.0"
-    assert app.settings.port == 9001
-    assert app.settings.mount_path == "/api"
-    assert app.settings.sse_path == "/events"
-    assert app.settings.message_path == "/msg/"
-    assert app.settings.streamable_http_path == "/mcp-http"
-    assert app.settings.json_response is True
-    assert app.settings.stateless_http is True
+    def __init__(self) -> None:
+        self.settings = SimpleNamespace(
+            host="127.0.0.1",
+            port=8000,
+            mount_path="/",
+            sse_path="/sse",
+            message_path="/messages/",
+            streamable_http_path="/mcp",
+        )
+        self.run_calls: list[SimpleNamespace] = []
+
+    def run(self, transport: str, mount_path: str | None = None) -> None:  # noqa: D401
+        """Record the run parameters instead of launching servers."""
+
+        self.run_calls.append(SimpleNamespace(transport=transport, mount_path=mount_path))
 
 
-def test_main_uses_cli_arguments(monkeypatch: MonkeyPatch) -> None:
-    """Main should construct the app with CLI args and invoke run with transport."""
-    recorded_kwargs: dict[str, object] = {}
-    run_calls: list[SimpleNamespace] = []
+def test_apply_settings_configures_http_transport(monkeypatch: MonkeyPatch) -> None:
+    """HTTP transport should map to streamable-http with the selected path."""
 
-    class FakeApp:
-        def run(self, transport: str, mount_path: str | None = None) -> None:  # noqa: D401
-            """Record the run parameters instead of launching servers."""
-            run_calls.append(SimpleNamespace(transport=transport, mount_path=mount_path))
+    fake_server = FakeServer()
+    monkeypatch.setattr(cli, "build_server", lambda: fake_server)
 
-    def fake_create_app(**kwargs: object) -> FakeApp:
-        recorded_kwargs.update(kwargs)
-        return FakeApp()
-
-    monkeypatch.setattr(main, "create_app", fake_create_app)
-
-    main.main(
+    args = cli.parse_args(
         [
             "--transport",
-            "streamable-http",
+            "http",
             "--host",
             "0.0.0.0",
             "--port",
             "9001",
+            "--path",
+            "/custom",
+        ]
+    )
+
+    transport, mount_path, server = cli._apply_settings(args)
+
+    assert transport == "streamable-http"
+    assert mount_path is None
+    assert server.settings.host == "0.0.0.0"
+    assert server.settings.port == 9001
+    assert server.settings.streamable_http_path == "/custom"
+
+
+def test_main_runs_with_sse_transport(monkeypatch: MonkeyPatch) -> None:
+    """Main should run the server with the configured SSE mount path."""
+
+    fake_server = FakeServer()
+    monkeypatch.setattr(cli, "build_server", lambda: fake_server)
+
+    cli.main(
+        [
+            "--transport",
+            "sse",
             "--mount-path",
             "/api",
             "--sse-path",
             "/events",
-            "--message-path",
-            "/msg/",
-            "--streamable-http-path",
-            "/mcp-http",
-            "--json-response",
-            "--stateless-http",
         ]
     )
 
-    assert recorded_kwargs == {
-        "host": "0.0.0.0",
-        "port": 9001,
-        "mount_path": "/api",
-        "sse_path": "/events",
-        "message_path": "/msg/",
-        "streamable_http_path": "/mcp-http",
-        "json_response": True,
-        "stateless_http": True,
-    }
-    assert len(run_calls) == 1
-    assert run_calls[0].transport == "streamable-http"
-    assert run_calls[0].mount_path is None
+    assert fake_server.settings.mount_path == "/api"
+    assert fake_server.settings.sse_path == "/events"
+    assert len(fake_server.run_calls) == 1
+    assert fake_server.run_calls[0].transport == "sse"
+    assert fake_server.run_calls[0].mount_path == "/api"

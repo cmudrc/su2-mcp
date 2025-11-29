@@ -36,14 +36,27 @@ pytest
 
 ### Running the server
 
-The server is built with [`FastMCP`](https://github.com/modelcontextprotocol/python-sdk) to expose SU2 tooling with generated JSON Schema metadata. Use the module entry point for a familiar MCP CLI experience and select the transport you need with flags.
+The server is built with [`FastMCP`](https://github.com/modelcontextprotocol/python-sdk) to expose SU2 tooling with generated JSON Schema metadata. Install in editable mode to register the console script:
+
+```bash
+pip install -e .[dev]
+```
 
 #### StdIO (default)
 
 Stream requests and responses over standard input/output with a single command:
 
 ```bash
-python -m su2_mcp_server --transport stdio
+su2-mcp-server --transport stdio
+```
+
+#### HTTP transports
+
+Expose the MCP server over HTTP using either the standard HTTP transport (`--transport http`) or the Streamable HTTP variant (`--transport streamable-http`). Both respect host/port flags and path selection:
+
+```bash
+su2-mcp-server --transport http --host 0.0.0.0 --port 8002 --path /mcp
+su2-mcp-server --transport streamable-http --host 0.0.0.0 --port 8002 --streamable-http-path /mcp
 ```
 
 #### Server-Sent Events (SSE)
@@ -51,15 +64,7 @@ python -m su2_mcp_server --transport stdio
 Expose the MCP server over HTTP with SSE. This starts a Starlette/uvicorn app on the configured host/port (defaults: `127.0.0.1:8000`) with the SSE stream mounted at `/sse`:
 
 ```bash
-python -m su2_mcp_server --transport sse --host 0.0.0.0 --port 8000 --sse-path /sse
+su2-mcp-server --transport sse --host 0.0.0.0 --port 8000 --mount-path / --sse-path /sse
 ```
 
-#### Streamable HTTP
-
-Serve the MCP API over the Streamable HTTP transport when clients prefer plain JSON requests. The default endpoint mounts at `/mcp` on the configured host/port:
-
-```bash
-python -m su2_mcp_server --transport streamable-http --host 0.0.0.0 --port 8000 --streamable-http-path /mcp
-```
-
-Additional options let you control the Starlette mount path (`--mount-path`), message transport path (`--message-path`), JSON response mode (`--json-response`), and stateless HTTP behavior (`--stateless-http`). If you need to embed the server programmatically, call `su2_mcp_server.main.create_app` with the same arguments and invoke `run` on the resulting `FastMCP` instance.
+Additional options let you control the Starlette mount path (`--mount-path`) and message transport path (`--message-path`). If you need to embed the server programmatically, call `su2_mcp_server.main.create_app` or `su2_mcp_server.fastmcp_server.build_server` and invoke `run` on the resulting `FastMCP` instance.
