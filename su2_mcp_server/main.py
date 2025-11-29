@@ -19,7 +19,6 @@ def create_app(
     stateless_http: bool = False,
 ) -> FastMCP:
     """Build a FastMCP application with all SU2 tools registered."""
-
     server = build_server()
     server.settings.host = host
     server.settings.port = port

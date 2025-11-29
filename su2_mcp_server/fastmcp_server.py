@@ -17,7 +17,6 @@ APP_INSTRUCTIONS = (
 
 def _server_version() -> str:
     """Return the package version, falling back to a development marker."""
-
     try:
         return version("su2-mcp-server")
     except PackageNotFoundError:
@@ -26,7 +25,6 @@ def _server_version() -> str:
 
 def build_server() -> FastMCP:
     """Construct a FastMCP server with all SU2 tools registered."""
-
     server = FastMCP(
         APP_NAME,
         instructions=f"{APP_INSTRUCTIONS} Version: {_server_version()}.",

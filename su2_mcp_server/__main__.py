@@ -14,7 +14,6 @@ TRANSPORT_CHOICES = ("stdio", "sse", "streamable-http", "http")
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments for the MCP server runner."""
-
     parser = argparse.ArgumentParser(description="Run the SU2 MCP server.")
     parser.add_argument(
         "--transport",
@@ -67,7 +66,6 @@ def _apply_settings(args: argparse.Namespace) -> tuple[str, str | None, FastMCP]
     Returns a tuple of the resolved transport identifier, the mount path (when
     applicable), and the configured server instance ready to run.
     """
-
     server = build_server()
     server.settings.host = args.host
     server.settings.port = args.port
@@ -87,7 +85,6 @@ def _apply_settings(args: argparse.Namespace) -> tuple[str, str | None, FastMCP]
 
 def main(argv: Sequence[str] | None = None) -> None:
     """Run the SU2 MCP server with CLI-selected transport settings."""
-
     args = parse_args(argv)
     transport, mount_path, server = _apply_settings(args)
     server.run(transport=transport, mount_path=mount_path)

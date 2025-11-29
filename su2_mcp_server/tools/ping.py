@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
@@ -33,8 +33,7 @@ def ping(args: PingRequest) -> PingResponse:
     The tool intentionally avoids importing SU2 or touching the filesystem so that
     MCP clients can verify connectivity even when SU2 binaries are unavailable.
     """
-
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     reply = args.message or "pong"
     return PingResponse(message=reply, server="su2-mcp", timestamp=now)
 

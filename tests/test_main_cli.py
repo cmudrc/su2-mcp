@@ -13,6 +13,7 @@ class FakeServer:
     """Lightweight stand-in for FastMCP used in CLI tests."""
 
     def __init__(self) -> None:
+        """Initialize default settings for test inspection."""
         self.settings = SimpleNamespace(
             host="127.0.0.1",
             port=8000,
@@ -25,13 +26,11 @@ class FakeServer:
 
     def run(self, transport: str, mount_path: str | None = None) -> None:  # noqa: D401
         """Record the run parameters instead of launching servers."""
-
         self.run_calls.append(SimpleNamespace(transport=transport, mount_path=mount_path))
 
 
 def test_apply_settings_configures_http_transport(monkeypatch: MonkeyPatch) -> None:
     """HTTP transport should map to streamable-http with the selected path."""
-
     fake_server = FakeServer()
     monkeypatch.setattr(cli, "build_server", lambda: fake_server)
 
@@ -59,7 +58,6 @@ def test_apply_settings_configures_http_transport(monkeypatch: MonkeyPatch) -> N
 
 def test_main_runs_with_sse_transport(monkeypatch: MonkeyPatch) -> None:
     """Main should run the server with the configured SSE mount path."""
-
     fake_server = FakeServer()
     monkeypatch.setattr(cli, "build_server", lambda: fake_server)
 

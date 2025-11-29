@@ -39,8 +39,7 @@ def test_create_app_registers_all_tools() -> None:
 
 
 def test_ping_tool_returns_health_payload() -> None:
-    """ping should answer without accessing SU2 binaries."""
-
+    """Ping should answer without accessing SU2 binaries."""
     response = ping(PingRequest(message="hello"))
 
     assert response.ok is True
