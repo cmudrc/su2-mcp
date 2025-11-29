@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import argparse
+from collections.abc import Callable, Mapping, Sequence
 from importlib.metadata import PackageNotFoundError, version
 
 from mcp.server.fastmcp import FastMCP
@@ -71,8 +72,28 @@ def _register_tools(app: FastMCP) -> None:
     _register_tool(app, "sample_surface_solution", results_tools.sample_surface_solution)
 
 
-def create_app() -> FastMCP:
+def create_app(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    mount_path: str = "/",
+    sse_path: str = "/sse",
+    message_path: str = "/messages/",
+    streamable_http_path: str = "/mcp",
+    json_response: bool = False,
+    stateless_http: bool = False,
+) -> FastMCP:
     """Build a FastMCP application with all SU2 tools registered.
+
+    Args:
+        host: Host interface on which to bind the HTTP transports.
+        port: Network port for HTTP transports.
+        mount_path: Base Starlette mount path for HTTP routes.
+        sse_path: Path segment for the SSE transport.
+        message_path: Path segment for the message transport.
+        streamable_http_path: Path segment for the streamable HTTP transport.
+        json_response: Whether to emit JSON responses for HTTP transports.
+        stateless_http: Whether to run the HTTP server without session state.
 
     Returns:
         A configured FastMCP application ready to be served over any supported MCP
@@ -88,13 +109,105 @@ def create_app() -> FastMCP:
     app = FastMCP(
         APP_NAME,
         instructions=f"{APP_INSTRUCTIONS} Version: {_server_version()}.",
+        host=host,
+        port=port,
+        mount_path=mount_path,
+        sse_path=sse_path,
+        message_path=message_path,
+        streamable_http_path=streamable_http_path,
+        json_response=json_response,
+        stateless_http=stateless_http,
     )
     _register_tools(app)
     return app
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse command-line arguments for the MCP server runner.
+
+    Args:
+        argv: Optional list of raw CLI arguments. Defaults to ``None`` to use
+            ``sys.argv``.
+
+    Returns:
+        Parsed ``argparse`` namespace.
+
+    """
+    parser = argparse.ArgumentParser(description="Run the SU2 MCP server.")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default="stdio",
+        help="Transport to expose (default: stdio).",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host interface to bind for HTTP transports (default: 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind for HTTP transports (default: 8000).",
+    )
+    parser.add_argument(
+        "--mount-path",
+        default="/",
+        help="Starlette mount path for HTTP routes (default: /).",
+    )
+    parser.add_argument(
+        "--sse-path",
+        default="/sse",
+        help="Path for the SSE transport (default: /sse).",
+    )
+    parser.add_argument(
+        "--message-path",
+        default="/messages/",
+        help="Path for the message transport (default: /messages/).",
+    )
+    parser.add_argument(
+        "--streamable-http-path",
+        default="/mcp",
+        help="Path for the streamable HTTP transport (default: /mcp).",
+    )
+    parser.add_argument(
+        "--json-response",
+        action="store_true",
+        help="Return JSON responses for HTTP transports (default: False).",
+    )
+    parser.add_argument(
+        "--stateless-http",
+        action="store_true",
+        help="Run the HTTP server without session state (default: False).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    """Run the SU2 MCP server with CLI-selected transport settings.
+
+    Args:
+        argv: Optional list of CLI arguments. Defaults to ``None`` to use
+            ``sys.argv``.
+
+    """
+    args = parse_args(argv)
+    app = create_app(
+        host=args.host,
+        port=args.port,
+        mount_path=args.mount_path,
+        sse_path=args.sse_path,
+        message_path=args.message_path,
+        streamable_http_path=args.streamable_http_path,
+        json_response=args.json_response,
+        stateless_http=args.stateless_http,
+    )
+    app.run(transport=args.transport)
 
 
 APP = create_app()
 
 
 if __name__ == "__main__":
-    APP.run(transport="stdio")
+    main()
