@@ -6,6 +6,7 @@ from su2_mcp_server.tools.config_tools import (
     set_mesh,
     update_config_entries,
 )
+from su2_mcp_server.tools.ping import PingRequest, PingResponse, ping
 from su2_mcp_server.tools.results_tools import (
     get_result_file_base64,
     list_result_files,
@@ -27,6 +28,7 @@ __all__ = [
     "get_session_info",
     "get_config_text",
     "parse_config",
+    "ping",
     "set_mesh",
     "update_config_entries",
     "get_result_file_base64",
@@ -35,4 +37,6 @@ __all__ = [
     "sample_surface_solution",
     "generate_deformed_mesh",
     "run_su2_solver",
+    "PingRequest",
+    "PingResponse",
 ]

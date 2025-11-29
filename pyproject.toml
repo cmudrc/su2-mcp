@@ -23,6 +23,9 @@ dev = [
   "pytest-cov>=5.0.0",
 ]
 
+[project.scripts]
+su2-mcp-server = "su2_mcp_server.__main__:main"
+
 [tool.black]
 line-length = 100
 target-version = ["py311"]
