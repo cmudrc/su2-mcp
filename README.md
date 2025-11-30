@@ -9,6 +9,7 @@ A Modular Compute Protocol (MCP) server that exposes SU2 workflows (session setu
 - Mesh upload and automatic `MESH_FILENAME` synchronization.
 - Safe solver execution wrappers with timeout and missing-binary handling.
 - Utilities for inspecting output files, sampling surface data, and exporting results.
+- Installation helper tools to verify SU2 availability.
 
 ## Development
 
@@ -68,3 +69,22 @@ su2-mcp-server --transport sse --host 0.0.0.0 --port 8000 --mount-path / --sse-p
 ```
 
 Additional options let you control the Starlette mount path (`--mount-path`) and message transport path (`--message-path`). If you need to embed the server programmatically, call `su2_mcp_server.main.create_app` or `su2_mcp_server.fastmcp_server.build_server` and invoke `run` on the resulting `FastMCP` instance.
+
+### Checking SU2 binaries
+
+Use the `get_su2_status` MCP tool to report whether common SU2 binaries (e.g., `SU2_CFD`, `SU2_DEF`) are present on `PATH`.
+You can call it directly in Python after installing the package:
+
+```bash
+python - <<'PY'
+from su2_mcp_server.tools.su2_installation import get_su2_status
+
+print(get_su2_status())
+PY
+```
+
+To install SU2 alongside the MCP server, opt in to the extra dependency group when installing:
+
+```bash
+pip install su2-mcp-server[su2]
+```

@@ -20,6 +20,7 @@ from su2_mcp_server.tools.session import (
     create_su2_session,
     get_session_info,
 )
+from su2_mcp_server.tools.su2_installation import get_su2_status
 
 __all__ = [
     "SESSION_MANAGER",
@@ -29,6 +30,7 @@ __all__ = [
     "get_config_text",
     "parse_config",
     "ping",
+    "get_su2_status",
     "set_mesh",
     "update_config_entries",
     "get_result_file_base64",
