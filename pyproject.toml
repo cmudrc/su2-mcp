@@ -29,6 +29,9 @@ su2 = [
 [project.scripts]
 su2-mcp-server = "su2_mcp_server.__main__:main"
 
+[tool.setuptools.packages.find]
+include = ["su2_mcp_server*"]
+
 [tool.setuptools.package-data]
 su2_mcp_server = ["data/*.geo"]
 
