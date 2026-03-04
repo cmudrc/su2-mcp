@@ -9,12 +9,12 @@ Geometry.OCCSewFaces       = 1;
 Geometry.OCCMakeSolids     = 1;
 Coherence;
 
-// Mesh sizing (keep coarse for first success)
-Mesh.CharacteristicLengthMin = 1000;
-Mesh.CharacteristicLengthMax = 6000;
+// Mesh sizing (smaller = finer mesh). Coarser = more robust for complex geometry (Concorde).
+Mesh.CharacteristicLengthMin = 800;
+Mesh.CharacteristicLengthMax = 4000;
 
 Mesh.Optimize       = 1;
-Mesh.OptimizeNetgen = 1;
+Mesh.OptimizeNetgen = 0;  // Disable - can segfault on bad tets with complex geometry
 
 // --- Build aircraft as a solid from the imported surfaces (THIS is the key) ---
 s_air[] = Surface{:};
@@ -55,8 +55,8 @@ Physical Surface("WALL")     = {s_wall[]};
 
 // Clean duplicates before 3D tetra (helps "overlapping facets")
 
-// Use Netgen (Algorithm3D = 4) to avoid HXT overlapping facets failures
-Mesh.Algorithm3D = 4; // Netgen
+// Delaunay (1) often more robust than Netgen (4) for complex aircraft geometry
+Mesh.Algorithm3D = 1;
 
 
 Mesh 2;
