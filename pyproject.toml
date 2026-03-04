@@ -3,63 +3,87 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "su2-mcp-server"
+name = "su2-mcp"
 version = "0.1.0"
-description = "MCP server for SU2 automation"
-authors = [{name = "AutoGen", email = "autogen@example.com"}]
+description = "An MCP server around SU2 workflows"
+authors = [
+  { name = "The Design Research Collective", email = "ask-drc@cmu.edu" }
+]
+maintainers = [
+  { name = "Christopher McComb", email = "ask-drc@cmu.edu" }
+]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
   "mcp>=1.22.0",
-  "pydantic>=2.6",
+  "pydantic>=2.9.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/cmudrc/su2-mcp"
+Repository = "https://github.com/cmudrc/su2-mcp"
+Issues = "https://github.com/cmudrc/su2-mcp/issues"
+Documentation = "https://cmudrc.github.io/su2-mcp/"
 
 [project.optional-dependencies]
 dev = [
-  "black>=24.10.0",
+  "pytest>=7.4",
+  "pytest-cov>=4.1",
+  "mypy>=1.11",
   "ruff>=0.6.0",
-  "mypy>=1.11.1",
-  "pytest>=8.2.2",
-  "pytest-cov>=5.0.0",
+  "sphinx>=8.0",
+  "sphinx-rtd-theme>=3.0.0",
+  "build>=1.2.0",
+  "twine>=5.1.0",
+  "pre-commit>=3.8.0",
 ]
 su2 = [
   "SU2",
 ]
 
 [project.scripts]
-su2-mcp-server = "su2_mcp_server.__main__:main"
-
-[tool.setuptools.packages.find]
-include = ["su2_mcp_server*"]
-
-[tool.setuptools.package-data]
-su2_mcp_server = ["data/*.geo"]
-
-[tool.black]
-line-length = 100
-target-version = ["py311"]
+su2-mcp = "su2_mcp.main:main"
 
 [tool.ruff]
-line-length = 100
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "N", "C4", "D", "ANN"]
-ignore = []
+line-length = 88
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ANN", "C4", "D"]
+ignore = ["D203", "D213"]
+
 [tool.mypy]
-python_version = "3.11"
-strict = true
+python_version = "3.12"
 warn_return_any = true
+warn_unused_ignores = true
 warn_unused_configs = true
+strict = true
+exclude = ["^build/"]
+mypy_path = "src"
 
 [[tool.mypy.overrides]]
 module = ["mcp.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-addopts = "-ra"
 testpaths = ["tests"]
+addopts = "--cov=su2_mcp --cov-report=term-missing"
+pythonpath = ["src"]
+markers = [
+  "examples_smoke: deterministic example smoke tests",
+  "examples_full: extended deterministic example tests",
+  "integration_real: optional tests requiring real SU2 binaries",
+]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["su2_mcp*"]
+
+[tool.setuptools.package-data]
+su2_mcp = ["data/*.geo"]
