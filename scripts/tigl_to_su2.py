@@ -381,14 +381,13 @@ def create_volume_mesh_from_step(step_path: str, su2_path: str, farfield_factor:
         gmsh.model.addPhysicalGroup(2, sorted(wall_surf_tags), name="WALL")
 
     # Mesh sizing
-    char_near = span / 50
+    char_near = span / 30
     char_far = span
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_near / 5)
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_near / 3)
     gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_far)
     gmsh.option.setNumber("Mesh.Algorithm", 6)
-    gmsh.option.setNumber("Mesh.Algorithm3D", 4)  # Netgen
     gmsh.option.setNumber("Mesh.Optimize", 1)
-    gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
+    gmsh.option.setNumber("Mesh.AngleToleranceFacetOverlap", 0.5)
 
     for stag in wall_surf_tags:
         pts = gmsh.model.getBoundary([(2, stag)], recursive=True)
@@ -400,7 +399,24 @@ def create_volume_mesh_from_step(step_path: str, su2_path: str, farfield_factor:
                     pass
 
     print("  Meshing (this may take a minute)...")
-    gmsh.model.mesh.generate(3)
+    meshed = False
+    for algo, name in [(4, "Netgen"), (1, "Delaunay"), (10, "HXT")]:
+        gmsh.option.setNumber("Mesh.Algorithm3D", algo)
+        gmsh.option.setNumber("Mesh.OptimizeNetgen", 1 if algo == 4 else 0)
+        try:
+            gmsh.model.mesh.generate(3)
+            node_check, _, _ = gmsh.model.mesh.getNodes()
+            if len(node_check) > 0:
+                print(f"  3D meshing succeeded with {name}")
+                meshed = True
+                break
+            print(f"  {name} produced 0 elements, trying next...")
+        except Exception as e:
+            print(f"  {name} failed: {e}, trying next...")
+        try:
+            gmsh.model.mesh.generate(2)
+        except Exception:
+            pass
 
     # Stats
     node_tags, _, _ = gmsh.model.mesh.getNodes()
