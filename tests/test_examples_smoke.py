@@ -12,8 +12,6 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-pytestmark = pytest.mark.examples_smoke
-
 
 def _run_example(relative_path: str) -> subprocess.CompletedProcess[str]:
     """Execute an example script from the repository root."""
@@ -29,6 +27,7 @@ def _run_example(relative_path: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+@pytest.mark.examples_smoke
 def test_tool_discovery_example_runs() -> None:
     """Tool discovery returns a deterministic list containing core SU2 tools."""
     completed = _run_example("examples/client/tool_discovery.py")
@@ -40,6 +39,7 @@ def test_tool_discovery_example_runs() -> None:
     assert "run_su2_solver" in payload["tool_names"]
 
 
+@pytest.mark.examples_smoke
 def test_session_lifecycle_example_runs() -> None:
     """The lifecycle example opens and closes a session successfully."""
     completed = _run_example("examples/su2/session_lifecycle.py")
@@ -51,6 +51,7 @@ def test_session_lifecycle_example_runs() -> None:
     assert "MESH_FILENAME" in payload["config_keys"]
 
 
+@pytest.mark.examples_smoke
 def test_http_launch_config_example_runs() -> None:
     """The HTTP launch config example emits expected parser values."""
     completed = _run_example("examples/server/http_launch_config.py")
