@@ -10,7 +10,8 @@ authors = [
   { name = "The Design Research Collective", email = "ask-drc@cmu.edu" }
 ]
 maintainers = [
-  { name = "Christopher McComb", email = "ask-drc@cmu.edu" }
+  { name = "Mayank Dixit", email = "mayankd@andrew.cmu.edu" },
+  { name = "Christopher McComb", email = "ccm@cmu.edu" },
 ]
 readme = "README.md"
 requires-python = ">=3.12"
