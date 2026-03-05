@@ -69,3 +69,11 @@ def test_su2_optional_extra_is_preserved() -> None:
     optional = _pyproject()["project"]["optional-dependencies"]
     assert "su2" in optional
     assert "SU2" in optional["su2"]
+
+
+def test_coverage_gate_default_is_meaningful() -> None:
+    """Coverage threshold script should enforce a high default minimum."""
+    script = (REPO_ROOT / "scripts" / "check_coverage_thresholds.py").read_text(
+        encoding="utf-8"
+    )
+    assert "DEFAULT_MINIMUM = 90.0" in script

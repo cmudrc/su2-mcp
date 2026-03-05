@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-DEFAULT_MINIMUM = 65.0
+DEFAULT_MINIMUM = 90.0
 
 
 def _load_total_percent(coverage_json: Path) -> float:
