@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "su2-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "An MCP server around SU2 workflows"
 authors = [
   { name = "The Design Research Collective", email = "ask-drc@cmu.edu" }
@@ -44,6 +44,7 @@ su2 = [
 
 [project.scripts]
 su2-mcp = "su2_mcp.main:main"
+su2-mcp-check = "su2_mcp.runtime_check:print_runtime_report"
 
 [tool.ruff]
 line-length = 88

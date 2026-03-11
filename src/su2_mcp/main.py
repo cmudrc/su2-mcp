@@ -105,6 +105,13 @@ def _resolve_transport(transport: TransportInput) -> Transport:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the SU2 MCP server with CLI-selected transport settings."""
+    raw = list(argv) if argv is not None else __import__("sys").argv[1:]
+    if raw and raw[0] == "check-runtime":
+        from su2_mcp.runtime_check import print_runtime_report
+
+        print_runtime_report()
+        return 0
+
     parser = build_parser()
     args = parser.parse_args(argv)
 

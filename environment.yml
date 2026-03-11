@@ -1,0 +1,13 @@
+name: su2-mcp
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - su2
+  - gmsh
+  - python-gmsh
+  - numpy
+  - pip
+  - pip:
+      - -e .

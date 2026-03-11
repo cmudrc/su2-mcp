@@ -6,7 +6,7 @@ from su2_mcp.tools.config_tools import (
     set_mesh,
     update_config_entries,
 )
-from su2_mcp.tools.mesh_tools import generate_mesh_from_step
+from su2_mcp.tools.mesh_tools import analyze_mesh, generate_mesh_from_step
 from su2_mcp.tools.ping import PingRequest, PingResponse, ping
 from su2_mcp.tools.results_tools import (
     get_result_file_base64,
@@ -39,6 +39,7 @@ __all__ = [
     "read_history_csv",
     "sample_surface_solution",
     "generate_deformed_mesh",
+    "analyze_mesh",
     "generate_mesh_from_step",
     "run_su2_solver",
     "PingRequest",
