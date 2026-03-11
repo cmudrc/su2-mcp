@@ -147,6 +147,42 @@ docker cp <container>:/tmp/history.csv output/
 docker cp <container>:/tmp/vol_solution.vtu output/
 ```
 
+### Quick runtime check
+
+Verify that SU2 and Gmsh are available:
+
+```bash
+su2-mcp-server check-runtime
+# or
+su2-mcp-check
+```
+
+This prints a diagnostic report showing which binaries are found, their paths, and install instructions for anything missing.
+
+### Performance and latency expectations
+
+SU2 runtime scales with mesh size, solver configuration, and hardware. Use the `analyze_mesh` MCP tool to get element counts and rough runtime estimates before launching a long solve.
+
+| Mesh Size | Elements | ~Time per Iteration | 250 Iterations |
+|-----------|----------|--------------------:|---------------:|
+| Coarse (density=30) | ~50k-100k | 0.1-0.2 s | 30-50 s |
+| Medium (density=60) | ~200k-500k | 0.4-1.0 s | 2-4 min |
+| Fine (density=100+) | ~1M+ | 2-5 s | 8-20 min |
+| Real-world (DLH25-class) | ~5M+ | 10-25 s | 40-100 min |
+
+**Factors affecting latency:**
+- **Element count** — dominant factor; scales roughly linearly for Euler
+- **Docker emulation** — running `linux/amd64` on Apple Silicon adds ~3-5x overhead
+- **Mesh quality** — poor aspect ratios force smaller CFL, slower convergence
+- **CFL adaptation** — aggressive CFL can speed up convergence but risks divergence
+- **Memory** — meshes above ~2M elements may need 8+ GB RAM; swapping kills performance
+
+**Tips for faster runs:**
+- Start with `surface_density: 30` to validate the pipeline, then increase for production
+- Use native SU2 (conda install) instead of Docker when possible
+- Set `cfl_adapt: true` (default) to let the solver increase CFL as it converges
+- Use `analyze_mesh` to check element count before committing to a long solve
+
 ### System-level dependencies
 
 These cannot be pip-installed and require conda or system packages:

@@ -13,7 +13,7 @@ from su2_mcp_server.tools.results_tools import (
     read_history_csv,
     sample_surface_solution,
 )
-from su2_mcp_server.tools.mesh_tools import generate_mesh_from_step
+from su2_mcp_server.tools.mesh_tools import analyze_mesh, generate_mesh_from_step
 from su2_mcp_server.tools.run_tools import generate_deformed_mesh, run_su2_solver
 from su2_mcp_server.tools.session import (
     SESSION_MANAGER,
@@ -39,6 +39,7 @@ __all__ = [
     "read_history_csv",
     "sample_surface_solution",
     "generate_deformed_mesh",
+    "analyze_mesh",
     "generate_mesh_from_step",
     "run_su2_solver",
     "PingRequest",

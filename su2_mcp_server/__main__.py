@@ -101,6 +101,20 @@ def _apply_settings(args: argparse.Namespace) -> tuple[Transport, str | None, Fa
 
 def main(argv: Sequence[str] | None = None) -> None:
     """Run the SU2 MCP server with CLI-selected transport settings."""
+    # Quick check for the check-runtime subcommand before full arg parsing
+    if argv is None:
+        import sys
+
+        argv_list = sys.argv[1:]
+    else:
+        argv_list = list(argv)
+
+    if argv_list and argv_list[0] == "check-runtime":
+        from su2_mcp_server.runtime_check import print_runtime_report
+
+        print_runtime_report()
+        return
+
     args = parse_args(argv)
     transport, mount_path, server = _apply_settings(args)
     server.run(transport=transport, mount_path=mount_path)

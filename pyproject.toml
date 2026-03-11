@@ -28,6 +28,7 @@ su2 = [
 
 [project.scripts]
 su2-mcp-server = "su2_mcp_server.__main__:main"
+su2-mcp-check = "su2_mcp_server.runtime_check:print_runtime_report"
 
 [tool.setuptools.packages.find]
 include = ["su2_mcp_server*"]

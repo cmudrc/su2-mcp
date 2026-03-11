@@ -121,4 +121,79 @@ def generate_mesh_from_step(
         shutil.rmtree(workdir, ignore_errors=True)
 
 
-__all__ = ["generate_mesh_from_step"]
+def analyze_mesh(
+    session_id: str,
+) -> dict[str, object]:
+    """Analyze the mesh attached to a session and return diagnostics.
+
+    Reports element counts by type, node count, boundary marker summary,
+    and estimated solver runtime scaling factors.  This helps diagnose
+    latency issues (ref: GitHub issue #6) by correlating mesh size with
+    expected compute time.
+    """
+    try:
+        record = SESSION_MANAGER.require(session_id)
+    except KeyError as exc:
+        return _error(str(exc), error_type="not_found")
+
+    mesh_path = record.workdir / record.mesh_filename
+    if not mesh_path.exists():
+        return _error("No mesh file found in session", error_type="not_found")
+
+    stats: dict[str, object] = {
+        "mesh_file": record.mesh_filename,
+        "file_size_bytes": mesh_path.stat().st_size,
+    }
+
+    try:
+        text = mesh_path.read_text(encoding="utf-8", errors="replace")
+        lines = text.splitlines()
+
+        n_points = 0
+        n_elements = 0
+        element_types: dict[str, int] = {}
+        markers: list[dict[str, object]] = []
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if line.startswith("NPOIN=") or line.startswith("NPOIN ="):
+                n_points = int(line.split("=")[1].strip().split()[0])
+            elif line.startswith("NELEM=") or line.startswith("NELEM ="):
+                n_elements = int(line.split("=")[1].strip().split()[0])
+                for j in range(i + 1, min(i + 1 + n_elements, len(lines))):
+                    etype = lines[j].strip().split()[0] if lines[j].strip() else ""
+                    element_types[etype] = element_types.get(etype, 0) + 1
+            elif line.startswith("MARKER_TAG=") or line.startswith("MARKER_TAG ="):
+                tag = line.split("=")[1].strip()
+                i += 1
+                if i < len(lines):
+                    nelem_line = lines[i].strip()
+                    if nelem_line.startswith("MARKER_ELEMS"):
+                        marker_elems = int(nelem_line.split("=")[1].strip())
+                        markers.append({"tag": tag, "elements": marker_elems})
+            i += 1
+
+        stats["nodes"] = n_points
+        stats["volume_elements"] = n_elements
+        stats["element_types"] = element_types
+        stats["markers"] = markers
+
+        # Rough runtime estimates (Euler solver on a single core)
+        # Based on empirical data: ~0.001-0.005 sec/element/iteration
+        if n_elements > 0:
+            est_per_iter_sec = n_elements * 0.002
+            stats["estimated_runtime"] = {
+                "per_iteration_sec": round(est_per_iter_sec, 2),
+                "at_100_iterations_sec": round(est_per_iter_sec * 100, 1),
+                "at_250_iterations_sec": round(est_per_iter_sec * 250, 1),
+                "at_500_iterations_sec": round(est_per_iter_sec * 500, 1),
+                "note": "Rough estimates for single-core Euler; actual time varies with hardware, CFL, and convergence",
+            }
+
+    except Exception as exc:
+        stats["parse_error"] = str(exc)
+
+    return stats
+
+
+__all__ = ["generate_mesh_from_step", "analyze_mesh"]

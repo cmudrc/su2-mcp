@@ -38,6 +38,7 @@ def build_server() -> FastMCP:
     server.add_tool(tools.update_config_entries)
     server.add_tool(tools.set_mesh)
     server.add_tool(tools.generate_mesh_from_step)
+    server.add_tool(tools.analyze_mesh)
     server.add_tool(tools.run_su2_solver)
     server.add_tool(tools.generate_deformed_mesh)
     server.add_tool(tools.get_su2_status)
