@@ -193,7 +193,11 @@ def analyze_mesh(
                 "at_100_iterations_sec": round(est_per_iter_sec * 100, 1),
                 "at_250_iterations_sec": round(est_per_iter_sec * 250, 1),
                 "at_500_iterations_sec": round(est_per_iter_sec * 500, 1),
-                "note": "Rough estimates for single-core Euler; actual time varies with hardware, CFL, and convergence",
+                "note": (
+                    "Rough estimates for single-core Euler;"
+                    " actual time varies with hardware,"
+                    " CFL, and convergence"
+                ),
             }
 
     except Exception as exc:

@@ -8,7 +8,6 @@ import sys
 
 from su2_mcp.su2_availability import check_su2_installation
 
-
 CONDA_INSTALL_CMD = "conda install -c conda-forge su2 gmsh python-gmsh"
 
 DOWNLOAD_URL = "https://su2code.github.io/download.html"
@@ -47,7 +46,8 @@ def _get_binary_version(name: str) -> str | None:
         )
         output = (result.stdout + result.stderr).strip()
         for line in output.splitlines():
-            if "release" in line.lower() or "version" in line.lower() or "su2" in line.lower():
+            low = line.lower()
+            if "release" in low or "version" in low or "su2" in low:
                 return line.strip()
         return output.splitlines()[0] if output else "unknown"
     except Exception:
