@@ -125,7 +125,7 @@ SCREEN_OUTPUT= INNER_ITER, RMS_DENSITY, RMS_MOMENTUM-X, RMS_ENERGY, LIFT, DRAG
 
 
 def _mesh_step_with_gmsh(
-    step_path: str, su2_path: str, mesh_cfg: dict | None = None
+    step_path: str, su2_path: str, mesh_cfg: dict[str, Any] | None = None
 ) -> bool:
     """Generate a volume mesh from a STEP file using Gmsh Python API.
 
@@ -408,6 +408,7 @@ def run_adapter(
             local_step.write_bytes(step_bytes)
             step_file = str(local_step)
         else:
+            assert step_path is not None
             step_file = step_path
 
         su2_mesh = str(out / "aircraft_volume.su2")
