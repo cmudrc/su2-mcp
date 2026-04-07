@@ -11,10 +11,8 @@ adapter reports the error honestly.
 
 from __future__ import annotations
 
-import base64
-import csv
+import logging
 import math
-import os
 import shutil
 import subprocess
 import tempfile
@@ -22,8 +20,6 @@ import time
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree as ET
-
-import logging
 
 LOGGER = logging.getLogger(__name__)
 
@@ -38,8 +34,16 @@ def read_from_cpacs(
     ref_area_el = root.find(".//vehicles/aircraft/model/reference/area")
     ref_length_el = root.find(".//vehicles/aircraft/model/reference/length")
 
-    ref_area = float(ref_area_el.text) if ref_area_el is not None and ref_area_el.text else 122.4
-    ref_length = float(ref_length_el.text) if ref_length_el is not None and ref_length_el.text else 4.2
+    ref_area = (
+        float(ref_area_el.text)
+        if ref_area_el is not None and ref_area_el.text
+        else 122.4
+    )
+    ref_length = (
+        float(ref_length_el.text)
+        if ref_length_el is not None and ref_length_el.text
+        else 4.2
+    )
 
     fc = flight_conditions or {}
     mach = fc.get("mach", 0.78)
@@ -55,16 +59,19 @@ def read_from_cpacs(
     }
 
 
-def _write_euler_config(cfg_path: Path, inputs: dict[str, Any], mesh_filename: str) -> None:
+def _write_euler_config(
+    cfg_path: Path, inputs: dict[str, Any], mesh_filename: str
+) -> None:
     """Write a real SU2 Euler configuration file."""
-    cfg_path.write_text(f"""\
+    cfg_path.write_text(
+        f"""\
 % ----------- SOLVER -----------%
 SOLVER= EULER
 MATH_PROBLEM= DIRECT
 
 % ----------- FREESTREAM -----------%
-MACH_NUMBER= {inputs['mach']}
-AOA= {inputs['aoa_deg']}
+MACH_NUMBER= {inputs["mach"]}
+AOA= {inputs["aoa_deg"]}
 SIDESLIP_ANGLE= 0.0
 FREESTREAM_PRESSURE= 101325.0
 FREESTREAM_TEMPERATURE= 288.15
@@ -84,8 +91,8 @@ MARKER_MONITORING= ( WALL )
 REF_ORIGIN_MOMENT_X= 15.0
 REF_ORIGIN_MOMENT_Y= 0.0
 REF_ORIGIN_MOMENT_Z= 0.0
-REF_LENGTH= {inputs['ref_length_m']}
-REF_AREA= {inputs['ref_area_m2']}
+REF_LENGTH= {inputs["ref_length_m"]}
+REF_AREA= {inputs["ref_area_m2"]}
 
 % ----------- NUMERICS -----------%
 NUM_METHOD_GRAD= GREEN_GAUSS
@@ -112,10 +119,14 @@ OUTPUT_WRT_FREQ= 50
 CONV_FILENAME= history
 HISTORY_OUTPUT= ( ITER, RMS_RES, LIFT, DRAG, AERO_COEFF )
 SCREEN_OUTPUT= INNER_ITER, RMS_DENSITY, RMS_MOMENTUM-X, RMS_ENERGY, LIFT, DRAG
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
 
-def _mesh_step_with_gmsh(step_path: str, su2_path: str, mesh_cfg: dict | None = None) -> bool:
+def _mesh_step_with_gmsh(
+    step_path: str, su2_path: str, mesh_cfg: dict | None = None
+) -> bool:
     """Generate a volume mesh from a STEP file using Gmsh Python API.
 
     Mirrors the proven logic from pipeline/tigl_to_su2.py's
@@ -145,8 +156,12 @@ def _mesh_step_with_gmsh(step_path: str, su2_path: str, mesh_cfg: dict | None = 
         for dim, tag in gmsh.model.getEntities():
             if dim >= 1:
                 bb = gmsh.model.getBoundingBox(dim, tag)
-                xmin_a = min(xmin_a, bb[0]); ymin_a = min(ymin_a, bb[1]); zmin_a = min(zmin_a, bb[2])
-                xmax_a = max(xmax_a, bb[3]); ymax_a = max(ymax_a, bb[4]); zmax_a = max(zmax_a, bb[5])
+                xmin_a = min(xmin_a, bb[0])
+                ymin_a = min(ymin_a, bb[1])
+                zmin_a = min(zmin_a, bb[2])
+                xmax_a = max(xmax_a, bb[3])
+                ymax_a = max(ymax_a, bb[4])
+                zmax_a = max(zmax_a, bb[5])
 
         cx = (xmin_a + xmax_a) / 2
         cy = (ymin_a + ymax_a) / 2
@@ -155,15 +170,17 @@ def _mesh_step_with_gmsh(step_path: str, su2_path: str, mesh_cfg: dict | None = 
         ff_half = span * farfield_factor / 2
 
         box = gmsh.model.occ.addBox(
-            cx - ff_half, cy - ff_half, cz - ff_half,
-            2 * ff_half, 2 * ff_half, 2 * ff_half,
+            cx - ff_half,
+            cy - ff_half,
+            cz - ff_half,
+            2 * ff_half,
+            2 * ff_half,
+            2 * ff_half,
         )
         gmsh.model.occ.synchronize()
 
         aircraft_dim_tags = volumes if volumes else [(2, t) for _, t in surfaces]
-        result, result_map = gmsh.model.occ.fragment(
-            [(3, box)], aircraft_dim_tags
-        )
+        result, result_map = gmsh.model.occ.fragment([(3, box)], aircraft_dim_tags)
         gmsh.model.occ.synchronize()
 
         frag_vols = gmsh.model.getEntities(3)
@@ -179,15 +196,24 @@ def _mesh_step_with_gmsh(step_path: str, su2_path: str, mesh_cfg: dict | None = 
         if not fluid_vol_tags:
             fluid_vol_tags = [t for _, t in frag_vols]
 
-        ff_bounds = [cx - ff_half, cx + ff_half, cy - ff_half, cy + ff_half, cz - ff_half, cz + ff_half]
+        ff_bounds = [
+            cx - ff_half,
+            cx + ff_half,
+            cy - ff_half,
+            cy + ff_half,
+            cz - ff_half,
+            cz + ff_half,
+        ]
         eps = span * 0.001
 
         farfield_surf_tags = set()
         for dim, tag in frag_surfs:
             bb = gmsh.model.getBoundingBox(dim, tag)
-            for ci, vals in [(0, [ff_bounds[0], ff_bounds[1]]),
-                             (1, [ff_bounds[2], ff_bounds[3]]),
-                             (2, [ff_bounds[4], ff_bounds[5]])]:
+            for ci, vals in [
+                (0, [ff_bounds[0], ff_bounds[1]]),
+                (1, [ff_bounds[2], ff_bounds[3]]),
+                (2, [ff_bounds[4], ff_bounds[5]]),
+            ]:
                 lo, hi = bb[ci], bb[ci + 3]
                 for val in vals:
                     if abs(lo - val) < eps and abs(hi - val) < eps:
@@ -272,7 +298,7 @@ def _parse_history(history_path: Path) -> dict[str, float | None]:
                 header = [h.strip().strip('"') for h in line.split(",")]
                 continue
             vals = line.split(",")
-            row = dict(zip(header, vals))
+            row = dict(zip(header, vals, strict=False))
             for key in row:
                 kl = key.lower().strip().strip('"')
                 if "cl" in kl or "lift" in kl:
@@ -385,7 +411,7 @@ def run_adapter(
             step_file = step_path
 
         su2_mesh = str(out / "aircraft_volume.su2")
-        print(f"      Meshing STEP → SU2 via Gmsh...")
+        print("      Meshing STEP → SU2 via Gmsh...")
         success = _mesh_step_with_gmsh(step_file, su2_mesh)
         if success:
             resolved_mesh = su2_mesh
@@ -414,6 +440,7 @@ def run_adapter(
     mesh_filename = Path(resolved_mesh).name
     if Path(resolved_mesh).parent != out:
         import shutil as sh
+
         sh.copy2(resolved_mesh, out / mesh_filename)
 
     config_name = "euler.cfg"
@@ -444,8 +471,16 @@ def run_adapter(
         results["L_over_D"] = round(cl / cd, 4) if abs(cd) > 1e-12 else 0.0
         ar = inputs["ref_area_m2"]
         e = 0.85
-        results["CDi"] = round((cl ** 2) / (math.pi * e * (ar / inputs["ref_length_m"])), 6) if ar > 0 else None
-        results["CD0"] = round(cd - (results["CDi"] or 0.0), 6) if results.get("CDi") is not None else None
+        results["CDi"] = (
+            round((cl**2) / (math.pi * e * (ar / inputs["ref_length_m"])), 6)
+            if ar > 0
+            else None
+        )
+        results["CD0"] = (
+            round(cd - (results["CDi"] or 0.0), 6)
+            if results.get("CDi") is not None
+            else None
+        )
     else:
         results["L_over_D"] = None
         results["error"] = {
@@ -478,7 +513,9 @@ def write_to_cpacs(cpacs_xml: str, results: dict[str, Any]) -> str:
 
     aero_el = ET.SubElement(ar, "aero")
     ET.SubElement(aero_el, "solver").text = results.get("solver", "unknown")
-    ET.SubElement(aero_el, "converged").text = str(results.get("converged", False)).lower()
+    ET.SubElement(aero_el, "converged").text = str(
+        results.get("converged", False)
+    ).lower()
     ET.SubElement(aero_el, "mach").text = str(results.get("mach", 0.0))
     ET.SubElement(aero_el, "aoaDeg").text = str(results.get("aoa_deg", 0.0))
 
@@ -492,7 +529,9 @@ def write_to_cpacs(cpacs_xml: str, results: dict[str, Any]) -> str:
             ET.SubElement(coeffs, key).text = str(val)
 
     if results.get("runtime_seconds") is not None:
-        ET.SubElement(aero_el, "runtimeSeconds").text = str(round(results["runtime_seconds"], 2))
+        ET.SubElement(aero_el, "runtimeSeconds").text = str(
+            round(results["runtime_seconds"], 2)
+        )
 
     if results.get("error"):
         err_el = ET.SubElement(aero_el, "error")
