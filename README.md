@@ -77,3 +77,36 @@ The Python package is pure Python, but some tools rely on external executables:
 
 - `run_su2_solver` / `generate_deformed_mesh`: requires SU2 binaries on `PATH`
 - `generate_mesh_from_step`: requires `gmsh` on `PATH`
+
+## Shared-CPACS Integration
+
+This MCP includes a **CPACS adapter** (`src/su2_mcp/cpacs_adapter.py`) that
+bridges SU2 to the shared-CPACS aircraft analysis pipeline.
+
+### What it does
+
+The adapter reads reference geometry and flight conditions from CPACS, meshes
+STEP files via Gmsh, runs real `SU2_CFD` Euler simulations, parses CL/CD from
+`history.csv`, and writes aerodynamic results into `//analysisResults/aero`.
+
+| Direction | XPath |
+|-----------|-------|
+| **Reads** | `.//vehicles/aircraft/model/reference`, `.//analysisResults/tigl` |
+| **Writes** | `.//vehicles/aircraft/model/analysisResults/aero` (CL, CD, L/D, solver info) |
+
+### Running as part of the pipeline
+
+```bash
+python pipeline/shared_cpacs_orchestrator.py D150_v30.xml --mcps tigl su2 pycycle mission
+```
+
+See [cmudrc/aircraft-analysis](https://github.com/cmudrc/aircraft-analysis) for
+full pipeline documentation, versioning details, and installation instructions.
+
+### Related MCP servers
+
+| MCP | Repository |
+|-----|-----------|
+| TiGL (geometry) | [cmudrc/tigl-mcp](https://github.com/cmudrc/tigl-mcp) |
+| pyCycle (engine cycle) | [cmudrc/pycycle-mcp](https://github.com/cmudrc/pycycle-mcp) |
+| Mission (trajectory/fuel) | [cmudrc/mission-mcp](https://github.com/cmudrc/mission-mcp) |
