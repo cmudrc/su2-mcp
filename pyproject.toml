@@ -73,6 +73,11 @@ mypy_path = "src"
 module = ["mcp.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["su2_mcp.cpacs_adapter"]
+ignore_missing_imports = true
+disallow_untyped_defs = false
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=su2_mcp --cov-report=term-missing"
