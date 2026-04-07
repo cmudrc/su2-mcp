@@ -74,9 +74,9 @@ module = ["mcp.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["su2_mcp.cpacs_adapter"]
+module = ["su2_mcp.cpacs_adapter", "gmsh"]
 ignore_missing_imports = true
-disallow_untyped_defs = false
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
