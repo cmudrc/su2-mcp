@@ -24,6 +24,44 @@ from xml.etree import ElementTree as ET
 LOGGER = logging.getLogger(__name__)
 
 
+# Mesh presets controlling Gmsh density and SU2 iteration budget.
+# Tuned so that "laptop" matches the historical default behaviour and the
+# higher tiers approach production fidelity for transonic transport Euler.
+MESH_PRESETS: dict[str, dict[str, Any]] = {
+    "laptop": {
+        "surface_density": 30,
+        "farfield_factor": 10.0,
+        "iter": 250,
+        "wall_timeout_seconds": 600,
+        "label": "laptop (default; ~50k cells; ~15s)",
+    },
+    "workstation": {
+        "surface_density": 80,
+        "farfield_factor": 10.0,
+        "iter": 400,
+        "wall_timeout_seconds": 1800,
+        "label": "workstation (~300k cells; ~5-10min)",
+    },
+    "industry": {
+        "surface_density": 200,
+        "farfield_factor": 15.0,
+        "iter": 800,
+        "wall_timeout_seconds": 7200,
+        "label": "industry-grade (~2M cells; ~30-90min)",
+    },
+}
+
+
+def resolve_preset(name: str | None) -> dict[str, Any]:
+    """Look up a mesh/run preset; default to laptop if unknown."""
+    if not name:
+        return dict(MESH_PRESETS["laptop"])
+    if name not in MESH_PRESETS:
+        LOGGER.warning("Unknown mesh preset %r; falling back to laptop.", name)
+        return dict(MESH_PRESETS["laptop"])
+    return dict(MESH_PRESETS[name])
+
+
 def read_from_cpacs(
     cpacs_xml: str,
     flight_conditions: dict[str, float] | None = None,
@@ -60,9 +98,28 @@ def read_from_cpacs(
 
 
 def _write_euler_config(
-    cfg_path: Path, inputs: dict[str, Any], mesh_filename: str
+    cfg_path: Path,
+    inputs: dict[str, Any],
+    mesh_filename: str,
+    iter_cap: int = 250,
+    cl_convergence_eps: float | None = None,
 ) -> None:
-    """Write a real SU2 Euler configuration file."""
+    """Write a real SU2 Euler configuration file.
+
+    `iter_cap` is the hard iteration limit. If `cl_convergence_eps` is set
+    (e.g. 1e-4), SU2 will also stop early when the standard deviation of
+    LIFT over the last 100 iterations drops below that threshold — the
+    right knob for adaptive mesh refinement (see SU2_TIMING_NOTE.md).
+    """
+    extra_conv = ""
+    if cl_convergence_eps is not None:
+        extra_conv = (
+            "\n% --- early Cauchy convergence on LIFT ---\n"
+            f"CONV_FIELD= LIFT\n"
+            f"CONV_CAUCHY_ELEMS= 100\n"
+            f"CONV_CAUCHY_EPS= {cl_convergence_eps}\n"
+        )
+
     cfg_path.write_text(
         f"""\
 % ----------- SOLVER -----------%
@@ -110,8 +167,8 @@ LINEAR_SOLVER_ERROR= 1e-6
 LINEAR_SOLVER_ITER= 10
 
 % ----------- CONVERGENCE -----------%
-ITER= 250
-CONV_RESIDUAL_MINVAL= -10
+ITER= {iter_cap}
+CONV_RESIDUAL_MINVAL= -10{extra_conv}
 
 % ----------- OUTPUT -----------%
 OUTPUT_FILES= ( RESTART, PARAVIEW )
@@ -374,16 +431,31 @@ def run_adapter(
     step_path: str | None = None,
     mesh_path: str | None = None,
     output_dir: str | None = None,
+    preset: str | None = None,
+    iter_cap: int | None = None,
+    cl_convergence_eps: float | None = None,
+    wall_timeout_seconds: int | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Full read→process→write cycle for the SU2 domain.
 
     Accepts geometry in one of three forms:
-    - mesh_path: pre-existing .su2 mesh file
-    - step_bytes: raw STEP file bytes (will mesh with Gmsh)
-    - step_path: path to a .step file (will mesh with Gmsh)
+    - mesh_path: pre-existing .su2 mesh file (preset still controls iter cap)
+    - step_bytes: raw STEP file bytes (will mesh with Gmsh at preset density)
+    - step_path: path to a .step file (will mesh with Gmsh at preset density)
+
+    The `preset` argument selects a (mesh density, iter cap, wall timeout)
+    triple — "laptop" (default), "workstation", or "industry". Individual
+    `iter_cap`, `cl_convergence_eps`, and `wall_timeout_seconds` arguments
+    override the preset values when supplied. See MESH_PRESETS for details.
 
     Runs the real SU2_CFD solver and parses results.
     """
+    cfg = resolve_preset(preset)
+    if iter_cap is not None:
+        cfg["iter"] = iter_cap
+    if wall_timeout_seconds is not None:
+        cfg["wall_timeout_seconds"] = wall_timeout_seconds
+
     inputs = read_from_cpacs(cpacs_xml, flight_conditions)
     out = Path(output_dir or tempfile.mkdtemp(prefix="su2_run_"))
     out.mkdir(parents=True, exist_ok=True)
@@ -395,6 +467,11 @@ def run_adapter(
         "altitude_ft": inputs["altitude_ft"],
         "ref_area_m2": inputs["ref_area_m2"],
         "ref_length_m": inputs["ref_length_m"],
+        "preset": preset or "laptop",
+        "preset_label": cfg.get("label"),
+        "iter_cap": cfg["iter"],
+        "wall_timeout_seconds": cfg["wall_timeout_seconds"],
+        "cl_convergence_eps": cl_convergence_eps,
     }
 
     # Resolve mesh
@@ -412,11 +489,20 @@ def run_adapter(
             step_file = step_path
 
         su2_mesh = str(out / "aircraft_volume.su2")
-        print("      Meshing STEP → SU2 via Gmsh...")
-        success = _mesh_step_with_gmsh(step_file, su2_mesh)
+        mesh_cfg = {
+            "surface_density": cfg["surface_density"],
+            "farfield_factor": cfg["farfield_factor"],
+            "algorithm_2d": 6,
+        }
+        print(
+            f"      Meshing STEP → SU2 via Gmsh "
+            f"(preset={results['preset']}, surface_density={mesh_cfg['surface_density']})..."
+        )
+        success = _mesh_step_with_gmsh(step_file, su2_mesh, mesh_cfg)
         if success:
             resolved_mesh = su2_mesh
             results["mesh_source"] = "gmsh_from_step"
+            results["mesh_surface_density"] = mesh_cfg["surface_density"]
         else:
             results["error"] = {
                 "type": "meshing_failure",
@@ -445,11 +531,20 @@ def run_adapter(
         sh.copy2(resolved_mesh, out / mesh_filename)
 
     config_name = "euler.cfg"
-    _write_euler_config(out / config_name, inputs, mesh_filename)
+    _write_euler_config(
+        out / config_name,
+        inputs,
+        mesh_filename,
+        iter_cap=cfg["iter"],
+        cl_convergence_eps=cl_convergence_eps,
+    )
 
     # Run real SU2_CFD
-    print(f"      Running SU2_CFD (Mach={inputs['mach']}, AoA={inputs['aoa_deg']}°)...")
-    run_result = _run_su2_cfd(out, config_name)
+    print(
+        f"      Running SU2_CFD (Mach={inputs['mach']}, AoA={inputs['aoa_deg']}°, "
+        f"iter_cap={cfg['iter']}, timeout={cfg['wall_timeout_seconds']}s)..."
+    )
+    run_result = _run_su2_cfd(out, config_name, timeout=cfg["wall_timeout_seconds"])
 
     if run_result.get("error"):
         results["error"] = run_result["error"]
