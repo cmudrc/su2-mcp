@@ -11,7 +11,15 @@ results inspection through an MCP server.
 - Optional STEP -> SU2 mesh conversion via `gmsh` (`generate_mesh_from_step`).
 - Solver wrappers for `SU2_CFD` and `SU2_DEF` with timeout/missing-binary
   handling.
-- Result-file listing, base64 download, history CSV parsing, and surface sampling.
+- Result-file listing, base64 download, history CSV parsing, and surface
+  sampling.
+- **Open-ended mesh refinement (2026-06-21):** the CPACS adapter exposes
+  optional `surface_density` and `farfield_factor` overrides on top of
+  the three named presets (`laptop`/`workstation`/`industry`), and
+  reports the actual `mesh_n_elem` cell count plus a `cauchy_triggered`
+  flag so callers can build a converge-until-plateau loop (see the
+  `SKILL_OPEN_ENDED_MESH.md` skill and `scripts/run_converged_su2.py`
+  in `cmudrc/agent-mcp`).
 
 ## Install
 
@@ -97,7 +105,17 @@ STEP files via Gmsh, runs real `SU2_CFD` Euler simulations, parses CL/CD from
 ### Running as part of the pipeline
 
 ```bash
-python pipeline/shared_cpacs_orchestrator.py D150_v30.xml --mcps tigl su2 pycycle mission
+# Classic preset path
+python pipeline/shared_cpacs_orchestrator.py D150_v30.xml \
+    --mcps tigl su2 pycycle nseg --su2-preset workstation
+
+# Custom one-off density (open-ended override)
+python pipeline/shared_cpacs_orchestrator.py D150_v30.xml \
+    --mcps tigl su2 --su2-density 120
+
+# Converged delivery: refine surface_density until CL/CD plateau
+python pipeline/shared_cpacs_orchestrator.py D150_v30.xml \
+    --mcps tigl su2 --su2-converge
 ```
 
 See [cmudrc/aircraft-analysis](https://github.com/cmudrc/aircraft-analysis) for

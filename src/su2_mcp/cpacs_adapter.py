@@ -339,6 +339,46 @@ def _mesh_step_with_gmsh(
         gmsh.finalize()
 
 
+def _count_su2_mesh_elements(su2_path: Path | str) -> int | None:
+    """Return the NELEM count from an SU2 ASCII mesh, or None on failure.
+
+    SU2 ASCII meshes contain a ``NELEM= <n>`` header line; reading just that
+    line keeps this cheap for the multi-million-cell meshes the open-ended
+    refinement loop produces.
+    """
+    try:
+        p = Path(su2_path)
+        if not p.exists():
+            return None
+        with p.open("r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("NELEM="):
+                    return int(line.split("=", 1)[1].strip())
+                if line.startswith("NELEM "):
+                    return int(line.split()[1])
+        return None
+    except Exception:
+        return None
+
+
+def _detect_cauchy_triggered(log_tail: str, history_path: Path) -> bool:
+    """Best-effort detection that SU2 stopped early via CONV_CAUCHY on LIFT.
+
+    SU2 prints a banner like ``CAUCHY CRITERIA SATISFIED`` (and variants) on
+    the screen when the running-window Cauchy criterion is met. When that is
+    absent we fall back to ``inner_iter < iter_cap`` which the caller can
+    cross-check against the requested iteration budget.
+    """
+    if not log_tail:
+        return False
+    lower = log_tail.lower()
+    markers = ("cauchy criteria satisfied", "convergence achieved", "cauchy convergence")
+    if any(m in lower for m in markers):
+        return True
+    return False
+
+
 def _parse_history(history_path: Path) -> dict[str, float | None]:
     """Parse CL and CD from SU2 history.csv."""
     cl = cd = None
@@ -435,6 +475,8 @@ def run_adapter(
     iter_cap: int | None = None,
     cl_convergence_eps: float | None = None,
     wall_timeout_seconds: int | None = None,
+    surface_density: int | None = None,
+    farfield_factor: float | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Full read→process→write cycle for the SU2 domain.
 
@@ -448,6 +490,13 @@ def run_adapter(
     `iter_cap`, `cl_convergence_eps`, and `wall_timeout_seconds` arguments
     override the preset values when supplied. See MESH_PRESETS for details.
 
+    Open-ended refinement: pass an explicit ``surface_density`` integer (and
+    optionally ``farfield_factor``) to override the preset's Gmsh density
+    without touching its iteration budget. This is the additive entry point
+    used by the converged-delivery refinement loop (see
+    ``scripts/run_converged_su2.py`` and ``SKILL_OPEN_ENDED_MESH.md``); the
+    classic 3-preset path is unchanged when both overrides are ``None``.
+
     Runs the real SU2_CFD solver and parses results.
     """
     cfg = resolve_preset(preset)
@@ -455,6 +504,18 @@ def run_adapter(
         cfg["iter"] = iter_cap
     if wall_timeout_seconds is not None:
         cfg["wall_timeout_seconds"] = wall_timeout_seconds
+    if surface_density is not None:
+        if surface_density <= 0:
+            raise ValueError(
+                f"surface_density must be a positive int, got {surface_density!r}"
+            )
+        cfg["surface_density"] = int(surface_density)
+    if farfield_factor is not None:
+        if farfield_factor <= 0:
+            raise ValueError(
+                f"farfield_factor must be > 0, got {farfield_factor!r}"
+            )
+        cfg["farfield_factor"] = float(farfield_factor)
 
     inputs = read_from_cpacs(cpacs_xml, flight_conditions)
     out = Path(output_dir or tempfile.mkdtemp(prefix="su2_run_"))
@@ -472,6 +533,8 @@ def run_adapter(
         "iter_cap": cfg["iter"],
         "wall_timeout_seconds": cfg["wall_timeout_seconds"],
         "cl_convergence_eps": cl_convergence_eps,
+        "requested_surface_density": cfg["surface_density"],
+        "requested_farfield_factor": cfg["farfield_factor"],
     }
 
     # Resolve mesh
@@ -479,6 +542,9 @@ def run_adapter(
     if mesh_path and Path(mesh_path).exists():
         resolved_mesh = str(mesh_path)
         results["mesh_source"] = f"existing:{mesh_path}"
+        nelem = _count_su2_mesh_elements(resolved_mesh)
+        if nelem is not None:
+            results["mesh_n_elem"] = nelem
     elif step_bytes or step_path:
         if step_bytes:
             local_step = out / "aircraft_fused.step"
@@ -503,6 +569,10 @@ def run_adapter(
             resolved_mesh = su2_mesh
             results["mesh_source"] = "gmsh_from_step"
             results["mesh_surface_density"] = mesh_cfg["surface_density"]
+            results["mesh_farfield_factor"] = mesh_cfg["farfield_factor"]
+            nelem = _count_su2_mesh_elements(su2_mesh)
+            if nelem is not None:
+                results["mesh_n_elem"] = nelem
         else:
             results["error"] = {
                 "type": "meshing_failure",
@@ -586,6 +656,9 @@ def run_adapter(
 
     results["runtime_seconds"] = run_result.get("runtime_seconds")
     results["output_dir"] = str(out)
+    results["cauchy_triggered"] = _detect_cauchy_triggered(
+        run_result.get("log_tail", ""), history_file
+    )
 
     updated_xml = write_to_cpacs(cpacs_xml, results)
     return updated_xml, results

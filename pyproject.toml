@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "su2-mcp"
-version = "0.4.0"
-description = "An MCP server around SU2 workflows"
+version = "0.5.0"
+description = "An MCP server around SU2 workflows (mesh presets + open-ended density refinement + Cauchy-based inner convergence reporting)"
 authors = [
   { name = "The Design Research Collective", email = "ask-drc@cmu.edu" }
 ]
