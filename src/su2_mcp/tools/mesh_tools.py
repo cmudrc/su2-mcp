@@ -144,12 +144,15 @@ def analyze_mesh(
     except KeyError as exc:
         return _error(str(exc), error_type="not_found")
 
-    mesh_path = record.workdir / record.mesh_filename
-    if not mesh_path.exists():
+    # SessionRecord stores the mesh as `mesh_path`, an absolute Path or None.
+    # This previously read `record.mesh_filename`, which does not exist on the
+    # record, so every call raised AttributeError before reaching the parser.
+    mesh_path = record.mesh_path
+    if mesh_path is None or not mesh_path.exists():
         return _error("No mesh file found in session", error_type="not_found")
 
     stats: dict[str, object] = {
-        "mesh_file": record.mesh_filename,
+        "mesh_file": mesh_path.name,
         "file_size_bytes": mesh_path.stat().st_size,
     }
 

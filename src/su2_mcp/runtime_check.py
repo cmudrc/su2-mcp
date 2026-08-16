@@ -71,7 +71,7 @@ def check_full_runtime() -> dict[str, object]:
 
     gmsh_bin = shutil.which("gmsh")
     try:
-        import gmsh as _gmsh  # type: ignore[import-untyped]  # noqa: F401
+        import gmsh as _gmsh  # noqa: F401
 
         results["gmsh"] = {
             "available": True,
@@ -85,9 +85,9 @@ def check_full_runtime() -> dict[str, object]:
             "cli": gmsh_bin or "not on PATH",
         }
 
+    gmsh_result = results.get("gmsh")
     all_ok = bool(su2_info["installed"]) and (
-        isinstance(results.get("gmsh"), dict)
-        and results["gmsh"].get("available", False)  # type: ignore[union-attr]
+        isinstance(gmsh_result, dict) and bool(gmsh_result.get("available", False))
     )
     results["all_ok"] = all_ok
 

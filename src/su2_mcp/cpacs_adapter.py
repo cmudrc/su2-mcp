@@ -516,9 +516,7 @@ def run_adapter(
         cfg["surface_density"] = int(surface_density)
     if farfield_factor is not None:
         if farfield_factor <= 0:
-            raise ValueError(
-                f"farfield_factor must be > 0, got {farfield_factor!r}"
-            )
+            raise ValueError(f"farfield_factor must be > 0, got {farfield_factor!r}")
         cfg["farfield_factor"] = float(farfield_factor)
 
     inputs = read_from_cpacs(cpacs_xml, flight_conditions)

@@ -59,12 +59,14 @@ def test_preset_path_unchanged_when_no_override(tmp_path: Path) -> None:
         output_dir=str(tmp_path),
         preset="workstation",
     )
-    assert results["requested_surface_density"] == MESH_PRESETS["workstation"][
-        "surface_density"
-    ]
-    assert results["requested_farfield_factor"] == MESH_PRESETS["workstation"][
-        "farfield_factor"
-    ]
+    assert (
+        results["requested_surface_density"]
+        == MESH_PRESETS["workstation"]["surface_density"]
+    )
+    assert (
+        results["requested_farfield_factor"]
+        == MESH_PRESETS["workstation"]["farfield_factor"]
+    )
 
 
 def test_invalid_surface_density_rejected() -> None:
@@ -98,6 +100,5 @@ def test_detect_cauchy_triggered_recognises_banner() -> None:
 
 def test_detect_cauchy_triggered_default_false() -> None:
     assert (
-        _detect_cauchy_triggered("Iter 250 ... done.", Path("/no/history.csv"))
-        is False
+        _detect_cauchy_triggered("Iter 250 ... done.", Path("/no/history.csv")) is False
     )
