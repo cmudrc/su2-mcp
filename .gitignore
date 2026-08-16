@@ -210,3 +210,11 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 .DS_Store
+
+# Restricted dataset: DLR-F25 is provided by DLR under terms that forbid
+# redistribution. Never commit these files to any repository.
+DLR-F25*
+DLR_F25*
+dlr_f25*
+dlrf25*
+*F25*.xml
