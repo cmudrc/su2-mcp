@@ -373,7 +373,11 @@ def _detect_cauchy_triggered(log_tail: str, history_path: Path) -> bool:
     if not log_tail:
         return False
     lower = log_tail.lower()
-    markers = ("cauchy criteria satisfied", "convergence achieved", "cauchy convergence")
+    markers = (
+        "cauchy criteria satisfied",
+        "convergence achieved",
+        "cauchy convergence",
+    )
     if any(m in lower for m in markers):
         return True
     return False
@@ -562,7 +566,8 @@ def run_adapter(
         }
         print(
             f"      Meshing STEP → SU2 via Gmsh "
-            f"(preset={results['preset']}, surface_density={mesh_cfg['surface_density']})..."
+            f"(preset={results['preset']}, "
+            f"surface_density={mesh_cfg['surface_density']})..."
         )
         success = _mesh_step_with_gmsh(step_file, su2_mesh, mesh_cfg)
         if success:
