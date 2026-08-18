@@ -383,37 +383,61 @@ def _detect_cauchy_triggered(log_tail: str, history_path: Path) -> bool:
     return False
 
 
+#: Exact SU2 history column names, in preference order, for each coefficient.
+#: Matching is exact and case-insensitive. Substring matching is deliberately
+#: not used: "CL/CD" contains both "cl" and "cd", and "Cl" is the rolling-moment
+#: coefficient, so a substring rule silently returns the wrong column.
+_HISTORY_COLUMNS: dict[str, tuple[str, ...]] = {
+    "CL": ("cl", "cl(total)", "avg_cl", "lift_coefficient"),
+    "CD": ("cd", "cd(total)", "avg_cd", "drag_coefficient"),
+}
+
+
+def _select_column(header: list[str], candidates: tuple[str, ...]) -> int | None:
+    """Return the index of the first header entry exactly matching a candidate."""
+    normalised = [h.strip().strip('"').strip().lower() for h in header]
+    for candidate in candidates:
+        if candidate in normalised:
+            return normalised.index(candidate)
+    return None
+
+
 def _parse_history(history_path: Path) -> dict[str, float | None]:
-    """Parse CL and CD from SU2 history.csv."""
-    cl = cd = None
+    """Parse CL and CD from SU2 history.csv.
+
+    Columns are matched by exact name rather than by substring. The previous
+    implementation scanned for "cl"/"cd" anywhere in a column name and kept the
+    last match, so a "CL/CD" efficiency column set both coefficients to the
+    lift-to-drag ratio, and a rolling-moment "Cl" column was read as lift. Both
+    produced plausible-looking numbers that were wrong.
+    """
     if not history_path.exists():
         return {"CL": None, "CD": None}
 
-    with history_path.open("r", encoding="utf-8") as f:
-        header = None
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            if header is None:
-                header = [h.strip().strip('"') for h in line.split(",")]
-                continue
-            vals = line.split(",")
-            row = dict(zip(header, vals, strict=False))
-            for key in row:
-                kl = key.lower().strip().strip('"')
-                if "cl" in kl or "lift" in kl:
-                    try:
-                        cl = float(row[key])
-                    except ValueError:
-                        pass
-                if "cd" in kl or "drag" in kl:
-                    try:
-                        cd = float(row[key])
-                    except ValueError:
-                        pass
+    lines = [ln.strip() for ln in history_path.read_text(encoding="utf-8").splitlines()]
+    rows = [ln for ln in lines if ln]
+    if len(rows) < 2:
+        return {"CL": None, "CD": None}
 
-    return {"CL": cl, "CD": cd}
+    header = rows[0].split(",")
+    indices = {
+        name: _select_column(header, candidates)
+        for name, candidates in _HISTORY_COLUMNS.items()
+    }
+
+    result: dict[str, float | None] = {"CL": None, "CD": None}
+    # Walk forward so the converged final iteration wins.
+    for line in rows[1:]:
+        values = line.split(",")
+        for name, index in indices.items():
+            if index is None or index >= len(values):
+                continue
+            try:
+                result[name] = float(values[index])
+            except ValueError:
+                continue
+
+    return result
 
 
 def _run_su2_cfd(workdir: Path, config_name: str, timeout: int = 600) -> dict[str, Any]:
@@ -636,7 +660,21 @@ def run_adapter(
     results["CD"] = cd
     results["converged"] = cl is not None and cd is not None
 
-    if cl is not None and cd is not None:
+    unphysical = (
+        _check_coefficients(cl, cd) if (cl is not None and cd is not None) else None
+    )
+    if unphysical is not None:
+        # Refuse to publish an impossible coefficient. Downstream tools size an
+        # engine directly from CD, so letting this through turns one bad number
+        # into a bad engine and then a bad mission.
+        results["CL"] = None
+        results["CD"] = None
+        results["L_over_D"] = None
+        results["converged"] = False
+        results["error"] = unphysical
+        results["raw_CL"] = cl
+        results["raw_CD"] = cd
+    elif cl is not None and cd is not None:
         results["L_over_D"] = round(cl / cd, 4) if abs(cd) > 1e-12 else 0.0
         ar = inputs["ref_area_m2"]
         e = 0.85
@@ -665,6 +703,48 @@ def run_adapter(
 
     updated_xml = write_to_cpacs(cpacs_xml, results)
     return updated_xml, results
+
+
+#: A body cannot produce negative drag, and no aircraft in this regime reaches a
+#: lift coefficient of a few tens. These are impossibility bounds, not accuracy
+#: bounds: a value outside them means the run or the parse is broken, not that
+#: the answer is imprecise. Anything inside them is passed through untouched.
+_CD_MIN = 0.0
+_CL_ABS_MAX = 20.0
+_CD_ABS_MAX = 20.0
+
+
+def _check_coefficients(cl: float, cd: float) -> dict[str, Any] | None:
+    """Return a structured error if the coefficients are physically impossible."""
+    if cd <= _CD_MIN:
+        return {
+            "type": "unphysical_result",
+            "message": (
+                f"SU2 returned a non-positive drag coefficient (CD={cd:.6g}). "
+                "A closed body cannot produce negative drag."
+            ),
+            "details": (
+                "Check that the mesh is in metres and matches REF_AREA in the "
+                "config, that farfield boundary markers are correct, and that "
+                "the solution converged. This value was not written to CPACS, "
+                "because a later tool would size an engine from it."
+            ),
+        }
+    if abs(cl) > _CL_ABS_MAX or abs(cd) > _CD_ABS_MAX:
+        return {
+            "type": "unphysical_result",
+            "message": (
+                f"SU2 returned coefficients outside any physically possible "
+                f"range (CL={cl:.6g}, CD={cd:.6g})."
+            ),
+            "details": (
+                "This usually means the force non-dimensionalisation is wrong: "
+                "REF_AREA in the config and the actual meshed geometry disagree, "
+                "or the mesh is not in metres. This value was not written to "
+                "CPACS, because a later tool would size an engine from it."
+            ),
+        }
+    return None
 
 
 def write_to_cpacs(cpacs_xml: str, results: dict[str, Any]) -> str:
