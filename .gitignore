@@ -218,3 +218,6 @@ DLR_F25*
 dlr_f25*
 dlrf25*
 *F25*.xml
+
+# JetBrains IDE settings
+.idea/

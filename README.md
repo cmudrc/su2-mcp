@@ -127,4 +127,11 @@ full pipeline documentation, versioning details, and installation instructions.
 |-----|-----------|
 | TiGL (geometry) | [cmudrc/tigl-mcp](https://github.com/cmudrc/tigl-mcp) |
 | pyCycle (engine cycle) | [cmudrc/pycycle-mcp](https://github.com/cmudrc/pycycle-mcp) |
-| Mission (trajectory/fuel) | [cmudrc/mission-mcp](https://github.com/cmudrc/mission-mcp) |
+| Mission, segment/Breguet | [cmudrc/nseg-mcp](https://github.com/cmudrc/nseg-mcp) |
+| Mission, trajectory-level | [cmudrc/aviary-cpacs-mcp](https://github.com/cmudrc/aviary-cpacs-mcp) |
+
+## Maintainers
+
+Mayank Dixit ([@Kugel-Blitz-13](https://github.com/Kugel-Blitz-13)), Carnegie
+Mellon University — mayankd@cmu.edu
+Christopher McComb, Carnegie Mellon University — Design Research Collective
