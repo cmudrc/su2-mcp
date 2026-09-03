@@ -72,15 +72,19 @@ def read_from_cpacs(
     ref_area_el = root.find(".//vehicles/aircraft/model/reference/area")
     ref_length_el = root.find(".//vehicles/aircraft/model/reference/length")
 
+    # No defaults. SU2 normalises lift and drag by the reference area, so a
+    # substituted area rescales every coefficient the run reports. 122.4 m2 and
+    # 4.2 m are the D150's, and defaulting to them meant any file missing the
+    # reference block was silently reported in D150 units.
     ref_area = (
         float(ref_area_el.text)
         if ref_area_el is not None and ref_area_el.text
-        else 122.4
+        else None
     )
     ref_length = (
         float(ref_length_el.text)
         if ref_length_el is not None and ref_length_el.text
-        else 4.2
+        else None
     )
 
     fc = flight_conditions or {}
@@ -544,6 +548,36 @@ def run_adapter(
         cfg["farfield_factor"] = float(farfield_factor)
 
     inputs = read_from_cpacs(cpacs_xml, flight_conditions)
+
+    # SU2 normalises lift and drag by these, so they cannot be guessed: a
+    # substituted reference area rescales every coefficient the run reports,
+    # and the result still looks entirely plausible.
+    missing_refs = [
+        name
+        for name, key in (("area", "ref_area_m2"), ("length", "ref_length_m"))
+        if inputs.get(key) is None
+    ]
+    if missing_refs:
+        return cpacs_xml, {
+            "solver": "su2_cfd",
+            "success": False,
+            "error": {
+                "type": "missing_input",
+                "message": (
+                    "Cannot run CFD: the CPACS file states no reference "
+                    + " or ".join(missing_refs)
+                    + "."
+                ),
+                "details": (
+                    "Add //vehicles/aircraft/model/reference/"
+                    + ", ".join(missing_refs)
+                    + ". These are not defaulted: SU2 divides lift and drag by "
+                    "the reference area, so a borrowed value rescales every "
+                    "coefficient and the run still appears to succeed."
+                ),
+            },
+        }
+
     out = Path(output_dir or tempfile.mkdtemp(prefix="su2_run_"))
     out.mkdir(parents=True, exist_ok=True)
 
