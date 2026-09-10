@@ -62,6 +62,44 @@ def resolve_preset(name: str | None) -> dict[str, Any]:
     return dict(MESH_PRESETS[name])
 
 
+def _wing_aspect_ratio(
+    root: ET.Element, ref_area_m2: float | None
+) -> tuple[float | None, str]:
+    """Aspect ratio b^2 / S_ref from the file's own wing geometry.
+
+    Prefers an explicit ``reference/aspectRatio`` if the file carries one.
+    Otherwise the span of each wing is summed from its positionings
+    (length * cos(sweep) * cos(dihedral)), doubled when the wing is declared
+    symmetric, and the largest span is taken as the main wing. Returns
+    ``(None, reason)`` when it cannot be computed. It never guesses.
+    """
+    if not ref_area_m2 or ref_area_m2 <= 0:
+        return None, "no reference area in the file"
+    ar_el = root.find(".//vehicles/aircraft/model/reference/aspectRatio")
+    if ar_el is not None and ar_el.text:
+        try:
+            return float(ar_el.text), "cpacs:reference/aspectRatio"
+        except ValueError:
+            pass
+    best_span = 0.0
+    for wing in root.findall(".//vehicles/aircraft/model/wings/wing"):
+        half = 0.0
+        for pos in wing.findall(".//positionings/positioning"):
+            try:
+                length = float(pos.findtext("length") or 0.0)
+                sweep = math.radians(float(pos.findtext("sweepAngle") or 0.0))
+                dihedral = math.radians(float(pos.findtext("dihedralAngle") or 0.0))
+            except ValueError:
+                continue
+            half += length * math.cos(sweep) * math.cos(dihedral)
+        span = 2.0 * half if wing.get("symmetry") else half
+        best_span = max(best_span, span)
+    if best_span <= 0.0:
+        return None, "no wing positionings in the file"
+    source = f"cpacs:wing positionings, span {best_span:.2f} m"
+    return round(best_span * best_span / ref_area_m2, 3), source
+
+
 def read_from_cpacs(
     cpacs_xml: str,
     flight_conditions: dict[str, float] | None = None,
@@ -92,9 +130,13 @@ def read_from_cpacs(
     aoa = fc.get("aoa", 2.0)
     altitude_ft = fc.get("altitude_ft", 35000.0)
 
+    aspect_ratio, aspect_ratio_source = _wing_aspect_ratio(root, ref_area)
+
     return {
         "ref_area_m2": ref_area,
         "ref_length_m": ref_length,
+        "aspect_ratio": aspect_ratio,
+        "aspect_ratio_source": aspect_ratio_source,
         "mach": mach,
         "aoa_deg": aoa,
         "altitude_ft": altitude_ft,
@@ -710,18 +752,33 @@ def run_adapter(
         results["raw_CD"] = cd
     elif cl is not None and cd is not None:
         results["L_over_D"] = round(cl / cd, 4) if abs(cd) > 1e-12 else 0.0
-        ar = inputs["ref_area_m2"]
+        # One Euler point gives CL and CD only. Splitting CD into induced and
+        # parasite parts needs an aspect ratio and an Oswald efficiency, so the
+        # split is an estimate and is labelled as one. It is not a fitted polar.
+        #
+        # Until 2026-09-10 this divided the reference AREA by the reference
+        # LENGTH and used the result as the aspect ratio: 29.1 for the D150
+        # against a real 9.4 from the file's own wing geometry. Induced drag
+        # was understated about 3x, and the published k = 0.0129 was this
+        # formula with that wrong quantity in it.
+        ar = inputs.get("aspect_ratio")
         e = 0.85
-        results["CDi"] = (
-            round((cl**2) / (math.pi * e * (ar / inputs["ref_length_m"])), 6)
-            if ar > 0
-            else None
-        )
-        results["CD0"] = (
-            round(cd - (results["CDi"] or 0.0), 6)
-            if results.get("CDi") is not None
-            else None
-        )
+        if ar is not None and ar > 0:
+            cdi = round((cl**2) / (math.pi * e * ar), 6)
+            results["CDi"] = cdi
+            results["CD0"] = round(cd - cdi, 6)
+            results["polar_method"] = "single_point_oswald_split"
+            results["oswald_e"] = e
+            results["aspect_ratio"] = ar
+            results["aspect_ratio_source"] = inputs.get("aspect_ratio_source")
+        else:
+            results["CDi"] = None
+            results["CD0"] = None
+            results["polar_note"] = (
+                "CD not split into CD0 and CDi: no aspect ratio could be "
+                f"determined ({inputs.get('aspect_ratio_source')}). Supply a "
+                "drag polar to the mission stage explicitly."
+            )
     else:
         results["L_over_D"] = None
         results["error"] = {
@@ -813,6 +870,18 @@ def write_to_cpacs(cpacs_xml: str, results: dict[str, Any]) -> str:
         val = results.get(key)
         if val is not None:
             ET.SubElement(coeffs, key).text = str(val)
+    # How CD0/CDi were obtained travels with them, so a reader of the file can
+    # see that the split is a labelled estimate and what it assumed.
+    for key, tag in (
+        ("polar_method", "polarMethod"),
+        ("oswald_e", "oswaldE"),
+        ("aspect_ratio", "aspectRatio"),
+        ("aspect_ratio_source", "aspectRatioSource"),
+        ("polar_note", "polarNote"),
+    ):
+        val = results.get(key)
+        if val is not None:
+            ET.SubElement(coeffs, tag).text = str(val)
 
     if results.get("runtime_seconds") is not None:
         ET.SubElement(aero_el, "runtimeSeconds").text = str(
