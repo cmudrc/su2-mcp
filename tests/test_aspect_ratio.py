@@ -53,7 +53,8 @@ def _cpacs(
     return (
         "<cpacs><vehicles><aircraft><model uID='m'>"
         + ref
-        + f"<wings><wing uID='w'{sym}><name>main</name><sections>{secs}</sections>{pos}</wing></wings>"
+        + f"<wings><wing uID='w'{sym}><name>main</name>"
+        + f"<sections>{secs}</sections>{pos}</wing></wings>"
         "</model></aircraft></vehicles></cpacs>"
     )
 
