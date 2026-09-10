@@ -62,16 +62,70 @@ def resolve_preset(name: str | None) -> dict[str, Any]:
     return dict(MESH_PRESETS[name])
 
 
+def _wing_half_span(wing: ET.Element) -> float:
+    """Largest |y| of any section origin, resolving CPACS section placement.
+
+    CPACS places a wing section either through a chain of ``positionings``
+    (each giving a length, sweep and dihedral from a ``fromSectionUID``) or
+    through the section's own ``transformation/translation``, or both. The
+    D150 uses the chain with zero translations; other DLR reference models use
+    translations with empty or zero-length positionings. Summing positioning
+    lengths alone therefore read one model's tailplane chain as its main wing.
+    """
+    sections = wing.findall(".//sections/section")
+    trans: dict[str, tuple[float, float, float]] = {}
+    for sec in sections:
+        uid = sec.get("uID") or ""
+        t = sec.find("transformation/translation")
+        if t is None:
+            trans[uid] = (0.0, 0.0, 0.0)
+        else:
+            trans[uid] = tuple(float(t.findtext(k) or 0.0) for k in ("x", "y", "z"))
+
+    # Resolve the positioning chain: position(to) = position(from) + length * direction.
+    pos: dict[str, tuple[float, float, float]] = {}
+    pending = list(wing.findall(".//positionings/positioning"))
+    for _ in range(len(pending) + 1):
+        if not pending:
+            break
+        rest = []
+        for pz in pending:
+            to_uid = pz.findtext("toSectionUID") or ""
+            from_uid = pz.findtext("fromSectionUID")
+            base = (0.0, 0.0, 0.0) if not from_uid else pos.get(from_uid)
+            if base is None:
+                rest.append(pz)
+                continue
+            try:
+                length = float(pz.findtext("length") or 0.0)
+                sweep = math.radians(float(pz.findtext("sweepAngle") or 0.0))
+                dihedral = math.radians(float(pz.findtext("dihedralAngle") or 0.0))
+            except ValueError:
+                continue
+            pos[to_uid] = (
+                base[0] + length * math.sin(sweep),
+                base[1] + length * math.cos(sweep) * math.cos(dihedral),
+                base[2] + length * math.cos(sweep) * math.sin(dihedral),
+            )
+        pending = rest
+
+    half = 0.0
+    for uid in {*trans, *pos}:
+        y = pos.get(uid, (0.0, 0.0, 0.0))[1] + trans.get(uid, (0.0, 0.0, 0.0))[1]
+        half = max(half, abs(y))
+    return half
+
+
 def _wing_aspect_ratio(
     root: ET.Element, ref_area_m2: float | None
 ) -> tuple[float | None, str]:
     """Aspect ratio b^2 / S_ref from the file's own wing geometry.
 
-    Prefers an explicit ``reference/aspectRatio`` if the file carries one.
-    Otherwise the span of each wing is summed from its positionings
-    (length * cos(sweep) * cos(dihedral)), doubled when the wing is declared
-    symmetric, and the largest span is taken as the main wing. Returns
-    ``(None, reason)`` when it cannot be computed. It never guesses.
+    Prefers an explicit ``reference/aspectRatio``. Otherwise each wing's span
+    is taken from its resolved section positions (see ``_wing_half_span``),
+    doubled when the wing is declared symmetric, and the largest span is the
+    main wing. Returns ``(None, reason)`` when it cannot be computed. It never
+    guesses.
     """
     if not ref_area_m2 or ref_area_m2 <= 0:
         return None, "no reference area in the file"
@@ -83,20 +137,12 @@ def _wing_aspect_ratio(
             pass
     best_span = 0.0
     for wing in root.findall(".//vehicles/aircraft/model/wings/wing"):
-        half = 0.0
-        for pos in wing.findall(".//positionings/positioning"):
-            try:
-                length = float(pos.findtext("length") or 0.0)
-                sweep = math.radians(float(pos.findtext("sweepAngle") or 0.0))
-                dihedral = math.radians(float(pos.findtext("dihedralAngle") or 0.0))
-            except ValueError:
-                continue
-            half += length * math.cos(sweep) * math.cos(dihedral)
+        half = _wing_half_span(wing)
         span = 2.0 * half if wing.get("symmetry") else half
         best_span = max(best_span, span)
     if best_span <= 0.0:
-        return None, "no wing positionings in the file"
-    source = f"cpacs:wing positionings, span {best_span:.2f} m"
+        return None, "no wing section positions in the file"
+    source = f"cpacs:wing sections, span {best_span:.2f} m"
     return round(best_span * best_span / ref_area_m2, 3), source
 
 

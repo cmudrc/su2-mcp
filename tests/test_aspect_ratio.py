@@ -28,20 +28,24 @@ def _cpacs(
     )
     ref += (f"<aspectRatio>{ar_node}</aspectRatio>" if ar_node else "") + "</reference>"
     pos = ""
+    secs = "".join(
+        f"<section uID='s{k}'><name>s{k}</name></section>" for k in range(1, 5)
+    )
     if positionings:
         rows = [
-            ("p1", 0, 0, 0),
-            ("p2", 1.875, 0, 0),
-            ("p3", 5.05, 25, 5),
-            ("p4", 12.013, 25, 5),
+            ("p1", None, "s1", 0, 0, 0),
+            ("p2", "s1", "s2", 1.875, 0, 0),
+            ("p3", "s2", "s3", 5.05, 25, 5),
+            ("p4", "s3", "s4", 12.013, 25, 5),
         ]
         pos = (
             "<positionings>"
             + "".join(
-                f"<positioning uID='{u}'><length>{L}</length>"
-                f"<sweepAngle>{sw}</sweepAngle>"
-                f"<dihedralAngle>{d}</dihedralAngle></positioning>"
-                for u, L, sw, d in rows
+                f"<positioning uID='{u}'>"
+                + (f"<fromSectionUID>{f}</fromSectionUID>" if f else "")
+                + f"<toSectionUID>{t}</toSectionUID><length>{L}</length>"
+                f"<sweepAngle>{sw}</sweepAngle><dihedralAngle>{d}</dihedralAngle></positioning>"
+                for u, f, t, L, sw, d in rows
             )
             + "</positionings>"
         )
@@ -49,7 +53,7 @@ def _cpacs(
     return (
         "<cpacs><vehicles><aircraft><model uID='m'>"
         + ref
-        + f"<wings><wing uID='w'{sym}><name>main</name>{pos}</wing></wings>"
+        + f"<wings><wing uID='w'{sym}><name>main</name><sections>{secs}</sections>{pos}</wing></wings>"
         "</model></aircraft></vehicles></cpacs>"
     )
 
@@ -66,7 +70,7 @@ def test_aspect_ratio_comes_from_wing_positionings() -> None:
     assert inputs["aspect_ratio"] == pytest.approx(
         _expected_ar(), abs=6e-4
     )  # adapter rounds to 3 dp
-    assert "positionings" in inputs["aspect_ratio_source"]
+    assert "wing sections" in inputs["aspect_ratio_source"]
 
 
 def test_aspect_ratio_is_never_area_over_length() -> None:
@@ -90,7 +94,7 @@ def test_no_reference_area_means_no_aspect_ratio_not_a_guess() -> None:
 def test_no_positionings_means_no_aspect_ratio_not_a_guess() -> None:
     inputs = read_from_cpacs(_cpacs(positionings=False))
     assert inputs["aspect_ratio"] is None
-    assert "no wing positionings" in inputs["aspect_ratio_source"]
+    assert "no wing section positions" in inputs["aspect_ratio_source"]
 
 
 def test_asymmetric_wing_is_not_doubled() -> None:
