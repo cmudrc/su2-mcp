@@ -454,6 +454,104 @@ def _count_su2_mesh_elements(su2_path: Path | str) -> int | None:
         return None
 
 
+#: VTK element types SU2 uses for boundary faces, and their node counts.
+_SU2_SURFACE_NODES = {5: 3, 9: 4}
+
+
+def _su2_wall_area(
+    su2_path: Path | str, wall_markers: tuple[str, ...] = ("WALL",)
+) -> dict[str, Any] | None:
+    """Wetted area of the geometry as meshed: the summed area of the wall faces.
+
+    Ron Engelbeck (Boeing), 2026-09: "sum up the surface area of the surface
+    patches of your CFD mesh." That is all this does. It reads the boundary
+    markers of the SU2 ASCII mesh that the run used and sums the triangle and
+    quadrilateral areas on the wall marker(s). It is the area of the faceted
+    surface SU2 actually saw, so on a coarse mesh it is a lower bound on the
+    smooth surface (D150: 712.9 / 715.3 / 718.2 m2 at 2.9k / 9.8k / 51k wall
+    faces against 719.2 m2 from the CAD faces). Nothing is smoothed or
+    corrected. Mesh units are taken as metres, like REF_AREA.
+
+    A mesh carrying a symmetry marker holds one side only; the area is then
+    doubled and the result says so. Returns None when the file cannot be read
+    or has no wall marker, never a guess.
+    """
+    try:
+        p = Path(su2_path)
+        points: list[tuple[float, float, float]] = []
+        markers: dict[str, list[tuple[int, ...]]] = {}
+        with p.open("r", encoding="utf-8", errors="ignore") as fh:
+            it = iter(fh)
+            for raw in it:
+                line = raw.split("%", 1)[0].strip()
+                if not line:
+                    continue
+                key, _, val = line.partition("=")
+                key = key.strip()
+                if key == "NDIME":
+                    if int(val) != 3:
+                        return None
+                elif key == "NELEM":
+                    n, got = int(val), 0
+                    while got < n:
+                        if next(it).strip():
+                            got += 1
+                elif key == "NPOIN":
+                    n, got = int(val), 0
+                    while got < n:
+                        parts = next(it).split()
+                        if not parts:
+                            continue
+                        points.append((float(parts[0]), float(parts[1]), float(parts[2])))
+                        got += 1
+                elif key == "MARKER_TAG":
+                    tag = val.strip()
+                    k2, _, v2 = next(it).partition("=")
+                    if k2.strip() != "MARKER_ELEMS":
+                        return None
+                    m = int(v2)
+                    elems: list[tuple[int, ...]] = []
+                    while len(elems) < m:
+                        parts = next(it).split()
+                        if not parts:
+                            continue
+                        nn = _SU2_SURFACE_NODES.get(int(parts[0]))
+                        if nn is None:
+                            return None
+                        elems.append(tuple(int(x) for x in parts[1 : 1 + nn]))
+                    markers[tag] = elems
+        walls = [w for w in wall_markers if w in markers]
+        if not points or not walls:
+            return None
+
+        def tri(a, b, c) -> float:
+            ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
+            vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
+            cx, cy, cz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+            return 0.5 * math.sqrt(cx * cx + cy * cy + cz * cz)
+
+        area = 0.0
+        n_faces = 0
+        for w in walls:
+            for e in markers[w]:
+                q = [points[i] for i in e]
+                area += tri(q[0], q[1], q[2]) + (tri(q[0], q[2], q[3]) if len(q) == 4 else 0.0)
+                n_faces += 1
+        half = any("SYM" in tag.upper() for tag in markers)
+        return {
+            "wetted_area_m2": round(area * (2.0 if half else 1.0), 3),
+            "wetted_area_source": (
+                "sum of the wall-marker faces of the SU2 mesh the run used "
+                "(faceted surface, lower bound on the smooth area)"
+                + ("; symmetry marker present, one-side area doubled" if half else "")
+            ),
+            "wetted_area_wall_faces": n_faces,
+            "wetted_area_wall_markers": walls,
+        }
+    except Exception:
+        return None
+
+
 def _detect_cauchy_triggered(log_tail: str, history_path: Path) -> bool:
     """Best-effort detection that SU2 stopped early via CONV_CAUCHY on LIFT.
 
@@ -742,6 +840,12 @@ def run_adapter(
         updated_xml = write_to_cpacs(cpacs_xml, results)
         return updated_xml, results
 
+    # Wetted area of the geometry as meshed, for the mass-properties and
+    # skin-friction stages downstream. Comes from the same faces SU2 solves on.
+    wall_area = _su2_wall_area(resolved_mesh)
+    if wall_area is not None:
+        results.update(wall_area)
+
     # Write SU2 config
     mesh_filename = Path(resolved_mesh).name
     if Path(resolved_mesh).parent != out:
@@ -910,6 +1014,15 @@ def write_to_cpacs(cpacs_xml: str, results: dict[str, Any]) -> str:
 
     if results.get("mesh_source"):
         ET.SubElement(aero_el, "meshSource").text = results["mesh_source"]
+    if results.get("wetted_area_m2") is not None:
+        ET.SubElement(aero_el, "wettedAreaM2").text = str(results["wetted_area_m2"])
+        ET.SubElement(aero_el, "wettedAreaSource").text = str(
+            results.get("wetted_area_source", "")
+        )
+        if results.get("wetted_area_wall_faces") is not None:
+            ET.SubElement(aero_el, "wettedAreaWallFaces").text = str(
+                results["wetted_area_wall_faces"]
+            )
 
     coeffs = ET.SubElement(aero_el, "coefficients")
     for key in ("CL", "CD", "CDi", "CD0", "Cm", "L_over_D"):
