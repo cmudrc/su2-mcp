@@ -19,10 +19,23 @@ from su2_mcp import cpacs_adapter
 from su2_mcp.cpacs_adapter import _su2_wall_area, run_adapter, write_to_cpacs
 
 _CUBE_POINTS = [
-    (0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0),
-    (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1),
+    (0, 0, 0),
+    (1, 0, 0),
+    (1, 1, 0),
+    (0, 1, 0),
+    (0, 0, 1),
+    (1, 0, 1),
+    (1, 1, 1),
+    (0, 1, 1),
 ]
-_CUBE_QUADS = [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
+_CUBE_QUADS = [
+    (0, 1, 2, 3),
+    (4, 5, 6, 7),
+    (0, 1, 5, 4),
+    (1, 2, 6, 5),
+    (2, 3, 7, 6),
+    (3, 0, 4, 7),
+]
 _CUBE_TRIS = [t for q in _CUBE_QUADS for t in ((q[0], q[1], q[2]), (q[0], q[2], q[3]))]
 
 
@@ -117,7 +130,10 @@ def test_run_adapter_reports_wetted_area_of_the_mesh_it_ran(
     monkeypatch.setattr(
         cpacs_adapter,
         "_run_su2_cfd",
-        lambda workdir, config_name, timeout=600: {"runtime_seconds": 0.1, "log_tail": ""},
+        lambda workdir, config_name, timeout=600: {
+            "runtime_seconds": 0.1,
+            "log_tail": "",
+        },
     )
     monkeypatch.setattr(
         cpacs_adapter, "_parse_history", lambda history_file: {"CL": 0.25, "CD": 0.0125}
@@ -127,7 +143,9 @@ def test_run_adapter_reports_wetted_area_of_the_mesh_it_ran(
         "<reference><area>1.0</area><length>1.0</length></reference>"
         "</model></aircraft></vehicles></cpacs>"
     )
-    xml, results = run_adapter(cpacs, mesh_path=str(mesh), output_dir=str(tmp_path / "out"))
+    xml, results = run_adapter(
+        cpacs, mesh_path=str(mesh), output_dir=str(tmp_path / "out")
+    )
     assert results["wetted_area_m2"] == pytest.approx(6.0)
     assert results["mesh_source"] == f"existing:{mesh}"
     assert ET.fromstring(xml).findtext(".//aero/wettedAreaM2") == "6.0"

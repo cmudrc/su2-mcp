@@ -273,6 +273,18 @@ SCREEN_OUTPUT= INNER_ITER, RMS_DENSITY, RMS_MOMENTUM-X, RMS_ENERGY, LIFT, DRAG
     )
 
 
+#: No aircraft is this long. Larger extents mean the STEP is in millimetres.
+_MAX_AIRCRAFT_EXTENT_M = 500.0
+
+#: Why the last meshing attempt was refused, for the structured error.
+_LAST_MESH_FAILURE: dict[str, str] = {}
+
+
+def _set_mesh_failure(reason: str) -> None:
+    _LAST_MESH_FAILURE["reason"] = reason
+    LOGGER.error("Meshing refused: %s", reason)
+
+
 def _mesh_step_with_gmsh(
     step_path: str, su2_path: str, mesh_cfg: dict[str, Any] | None = None
 ) -> bool:
@@ -300,6 +312,31 @@ def _mesh_step_with_gmsh(
         surfaces = gmsh.model.getEntities(2)
         LOGGER.info("Imported: %d volumes, %d surfaces", len(volumes), len(surfaces))
 
+        # A STEP with faces but no closed solid cannot be subtracted from the
+        # farfield box. Fragmenting the box with loose faces gives a domain
+        # with no aircraft cavity: SU2 runs, and the numbers mean nothing.
+        # This is exactly what happened to the F25 in March 2026. TiGL's own
+        # exportFusedSTEP writes such shells (in millimetres, one wing half);
+        # the tigl-mcp closed-solid export is the file to mesh.
+        if not volumes:
+            _set_mesh_failure(
+                f"STEP contains no closed solids ({len(surfaces)} faces only); it "
+                "cannot be volume-meshed. Export the geometry as closed solids "
+                "(tigl-mcp docker_tigl_closed_solids) instead of TiGL's "
+                "fused-shell STEP."
+            )
+            return False
+
+        # Surface area of the aircraft solids as CAD, before anything is cut.
+        # After meshing, the WALL marker must reproduce it: that is the test
+        # that the wall really is the aircraft skin.
+        cad_area = 0.0
+        for dim, tag in volumes:
+            for _fd, ftag in gmsh.model.getBoundary(
+                [(dim, tag)], oriented=False, recursive=False
+            ):
+                cad_area += gmsh.model.occ.getMass(2, abs(ftag))
+
         xmin_a = ymin_a = zmin_a = float("inf")
         xmax_a = ymax_a = zmax_a = float("-inf")
         for dim, tag in gmsh.model.getEntities():
@@ -316,6 +353,16 @@ def _mesh_step_with_gmsh(
         cy = (ymin_a + ymax_a) / 2
         cz = (zmin_a + zmax_a) / 2
         span = max(xmax_a - xmin_a, ymax_a - ymin_a, zmax_a - zmin_a)
+        # REF_AREA is in square metres. A body several hundred metres long is
+        # not an aircraft; it is a millimetre file, and every coefficient would
+        # come out scaled by a million.
+        if span > _MAX_AIRCRAFT_EXTENT_M:
+            _set_mesh_failure(
+                f"geometry extent {span:.0f} exceeds {_MAX_AIRCRAFT_EXTENT_M:.0f} m; "
+                "the STEP is not in metres (TiGL exports in millimetres) and cannot "
+                "be normalised by the CPACS reference area."
+            )
+            return False
         ff_half = span * farfield_factor / 2
 
         box = gmsh.model.occ.addBox(
@@ -422,6 +469,20 @@ def _mesh_step_with_gmsh(
             gmsh.write(su2_path)
             node_tags, _, _ = gmsh.model.mesh.getNodes()
             LOGGER.info("Wrote %s (%d nodes)", su2_path, len(node_tags))
+            # A 3-D generate() that fails part-way still leaves nodes behind,
+            # so "some nodes exist" is not "the domain was meshed". Check the
+            # mesh against the geometry it was supposed to wrap.
+            wall = _su2_wall_area(su2_path)
+            problem = _mesh_consistency_error(
+                cad_area,
+                wall["wetted_area_m2"] if wall else None,
+                _count_su2_mesh_elements(su2_path),
+                wall["wetted_area_wall_faces"] if wall else None,
+            )
+            if problem:
+                _set_mesh_failure(problem)
+                Path(su2_path).unlink(missing_ok=True)
+                return False
             return True
         else:
             LOGGER.error("All 3D meshing algorithms failed")
@@ -429,6 +490,42 @@ def _mesh_step_with_gmsh(
 
     finally:
         gmsh.finalize()
+
+
+#: The faceted wall is a lower bound on the CAD skin and converges to it
+#: (D150: -0.9 % at 2.9k faces). Anything outside this band is not the aircraft.
+_WALL_AREA_TOLERANCE = 0.15
+
+
+def _mesh_consistency_error(
+    cad_area_m2: float,
+    wall_area_m2: float | None,
+    n_volume_elements: int | None,
+    n_wall_faces: int | None,
+) -> str | None:
+    """Explain why a written mesh cannot be the fluid domain around the CAD body.
+
+    Returns None when the WALL marker's faceted area matches the CAD surface
+    area within tolerance and the volume mesh is at least as large as the wall
+    triangulation. Both failed for the F25 in September 2026: 5,871 tetrahedra
+    against 15,342 wall faces, and a wall area of 2.3e7 m2 against 853 m2.
+    """
+    if wall_area_m2 is None or n_wall_faces is None:
+        return "mesh has no WALL marker; the aircraft surface was not tagged."
+    if cad_area_m2 > 0:
+        rel = (wall_area_m2 - cad_area_m2) / cad_area_m2
+        if abs(rel) > _WALL_AREA_TOLERANCE:
+            return (
+                f"WALL marker area {wall_area_m2:,.1f} m2 differs from the CAD "
+                f"surface area {cad_area_m2:,.1f} m2 by {rel:+.0%}; the tagged wall "
+                "is not the aircraft skin (boolean or tagging failure)."
+            )
+    if n_volume_elements is not None and n_volume_elements < n_wall_faces:
+        return (
+            f"only {n_volume_elements:,} volume elements for {n_wall_faces:,} wall "
+            "faces; the 3-D mesh did not fill the domain."
+        )
+    return None
 
 
 def _count_su2_mesh_elements(su2_path: Path | str) -> int | None:
@@ -502,7 +599,9 @@ def _su2_wall_area(
                         parts = next(it).split()
                         if not parts:
                             continue
-                        points.append((float(parts[0]), float(parts[1]), float(parts[2])))
+                        points.append(
+                            (float(parts[0]), float(parts[1]), float(parts[2]))
+                        )
                         got += 1
                 elif key == "MARKER_TAG":
                     tag = val.strip()
@@ -524,7 +623,9 @@ def _su2_wall_area(
         if not points or not walls:
             return None
 
-        def tri(a, b, c) -> float:
+        Pt = tuple[float, float, float]
+
+        def tri(a: Pt, b: Pt, c: Pt) -> float:
             ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
             vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
             cx, cy, cz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
@@ -535,7 +636,9 @@ def _su2_wall_area(
         for w in walls:
             for e in markers[w]:
                 q = [points[i] for i in e]
-                area += tri(q[0], q[1], q[2]) + (tri(q[0], q[2], q[3]) if len(q) == 4 else 0.0)
+                area += tri(q[0], q[1], q[2]) + (
+                    tri(q[0], q[2], q[3]) if len(q) == 4 else 0.0
+                )
                 n_faces += 1
         half = any("SYM" in tag.upper() for tag in markers)
         return {
@@ -811,6 +914,7 @@ def run_adapter(
             f"(preset={results['preset']}, "
             f"surface_density={mesh_cfg['surface_density']})..."
         )
+        _LAST_MESH_FAILURE.clear()
         success = _mesh_step_with_gmsh(step_file, su2_mesh, mesh_cfg)
         if success:
             resolved_mesh = su2_mesh
@@ -825,6 +929,8 @@ def run_adapter(
                 "type": "meshing_failure",
                 "message": "Gmsh volume meshing failed for the provided STEP file.",
             }
+            if _LAST_MESH_FAILURE.get("reason"):
+                results["error"]["details"] = _LAST_MESH_FAILURE["reason"]
             results["converged"] = False
             updated_xml = write_to_cpacs(cpacs_xml, results)
             return updated_xml, results
