@@ -660,7 +660,7 @@ def _su2_wall_area(
 def _detect_cauchy_triggered(
     log_tail: str, history_path: Path, iter_cap: int | None = None
 ) -> bool:
-    """Did SU2 stop on its convergence criterion rather than on the iteration cap?
+    """Report whether SU2 stopped on its convergence criterion rather than the cap.
 
     SU2 v8.4 prints no banner when the Cauchy criterion on LIFT is met; it
     simply stops iterating and exits successfully. The reliable record is the
