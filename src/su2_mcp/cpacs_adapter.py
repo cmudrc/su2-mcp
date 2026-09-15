@@ -657,25 +657,39 @@ def _su2_wall_area(
         return None
 
 
-def _detect_cauchy_triggered(log_tail: str, history_path: Path) -> bool:
-    """Best-effort detection that SU2 stopped early via CONV_CAUCHY on LIFT.
+def _detect_cauchy_triggered(
+    log_tail: str, history_path: Path, iter_cap: int | None = None
+) -> bool:
+    """Did SU2 stop on its convergence criterion rather than on the iteration cap?
 
-    SU2 prints a banner like ``CAUCHY CRITERIA SATISFIED`` (and variants) on
-    the screen when the running-window Cauchy criterion is met. When that is
-    absent we fall back to ``inner_iter < iter_cap`` which the caller can
-    cross-check against the requested iteration budget.
+    SU2 v8.4 prints no banner when the Cauchy criterion on LIFT is met; it
+    simply stops iterating and exits successfully. The reliable record is the
+    history file: a successful run that wrote fewer iterations than the cap
+    stopped on its criterion (a diverged run exits non-zero and never reaches
+    this check). The banner strings are kept for older SU2 versions.
+
+    Found 2026-09-15: four refinement ladders (18 rungs) had this flag False on
+    every rung although 16 of them stopped at 120-270 of 800 iterations.
     """
-    if not log_tail:
+    if log_tail:
+        lower = log_tail.lower()
+        if any(
+            m in lower
+            for m in (
+                "cauchy criteria satisfied",
+                "convergence achieved",
+                "cauchy convergence",
+            )
+        ):
+            return True
+    if iter_cap is None or not Path(history_path).exists():
         return False
-    lower = log_tail.lower()
-    markers = (
-        "cauchy criteria satisfied",
-        "convergence achieved",
-        "cauchy convergence",
-    )
-    if any(m in lower for m in markers):
-        return True
-    return False
+    try:
+        with Path(history_path).open("r", encoding="utf-8", errors="ignore") as fh:
+            rows = sum(1 for i, line in enumerate(fh) if i > 0 and line.strip())
+    except OSError:
+        return False
+    return 0 < rows < iter_cap
 
 
 #: Exact SU2 history column names, in preference order, for each coefficient.
@@ -1047,7 +1061,7 @@ def run_adapter(
     results["runtime_seconds"] = run_result.get("runtime_seconds")
     results["output_dir"] = str(out)
     results["cauchy_triggered"] = _detect_cauchy_triggered(
-        run_result.get("log_tail", ""), history_file
+        run_result.get("log_tail", ""), history_file, iter_cap=cfg["iter"]
     )
 
     updated_xml = write_to_cpacs(cpacs_xml, results)

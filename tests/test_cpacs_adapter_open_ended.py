@@ -102,3 +102,18 @@ def test_detect_cauchy_triggered_default_false() -> None:
     assert (
         _detect_cauchy_triggered("Iter 250 ... done.", Path("/no/history.csv")) is False
     )
+
+
+def test_detect_cauchy_from_iteration_count(tmp_path: Path) -> None:
+    """SU2 v8.4 prints no banner; fewer history rows than the cap means it converged."""
+    hist = tmp_path / "history.csv"
+    hist.write_text(
+        "Inner_Iter,CL\n" + "\n".join(f"{i},0.2" for i in range(216)) + "\n"
+    )
+    assert _detect_cauchy_triggered("", hist, iter_cap=800) is True
+    full = tmp_path / "full.csv"
+    full.write_text(
+        "Inner_Iter,CL\n" + "\n".join(f"{i},0.2" for i in range(800)) + "\n"
+    )
+    assert _detect_cauchy_triggered("", full, iter_cap=800) is False
+    assert _detect_cauchy_triggered("", hist) is False  # no cap known: no claim
