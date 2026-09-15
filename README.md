@@ -101,6 +101,7 @@ STEP files via Gmsh, runs real `SU2_CFD` Euler simulations, parses CL/CD from
 |-----------|-------|
 | **Reads** | `.//vehicles/aircraft/model/reference`, `.//analysisResults/tigl` |
 | **Writes** | `.//vehicles/aircraft/model/analysisResults/aero` (CL, CD, L/D, solver info) |
+| **Records** | one `header/updates/update` entry per write: what was written, `su2-mcp <version>`, UTC timestamp, running version, cpacsVersion |
 
 ### Running as part of the pipeline
 
