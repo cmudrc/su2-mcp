@@ -182,8 +182,8 @@ def test_surface_size_m_sets_the_near_wall_size(tmp_path):
     for size in (0.5, 0.25):
         out = tmp_path / f"m_{size}.su2"
         a._LAST_MESH_FAILURE.clear()
-        ok = a._mesh_step_with_gmsh(str(step), str(out),
-                                    {"surface_density": 30, "farfield_factor": 10.0, "surface_size_m": size})
+        cfg = {"surface_density": 30, "farfield_factor": 10.0, "surface_size_m": size}
+        ok = a._mesh_step_with_gmsh(str(step), str(out), cfg)
         assert ok, a._LAST_MESH_FAILURE
         faces[size] = a._count_su2_wall_faces(str(out))
     assert faces[0.25] > faces[0.5] > 0
@@ -193,6 +193,9 @@ def test_count_su2_wall_faces(tmp_path):
     from su2_mcp import cpacs_adapter as a
 
     mesh = tmp_path / "m.su2"
-    mesh.write_text("NDIME= 3\nNELEM= 2\nNMARK= 2\nMARKER_TAG= FARFIELD\nMARKER_ELEMS= 7\nMARKER_TAG= WALL\nMARKER_ELEMS= 42\n")
+    mesh.write_text(
+        "NDIME= 3\nNELEM= 2\nNMARK= 2\nMARKER_TAG= FARFIELD\nMARKER_ELEMS= 7\n"
+        "MARKER_TAG= WALL\nMARKER_ELEMS= 42\n"
+    )
     assert a._count_su2_wall_faces(str(mesh)) == 42
     assert a._count_su2_wall_faces(str(tmp_path / "missing.su2")) is None

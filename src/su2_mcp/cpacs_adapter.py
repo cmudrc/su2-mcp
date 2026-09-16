@@ -538,7 +538,10 @@ def _mesh_consistency_error(
 
 
 def _count_su2_wall_faces(su2_path: str, wall_tag: str = "WALL") -> int | None:
-    """Count the surface elements on the WALL marker of an SU2 mesh (None if unreadable)."""
+    """Count the surface elements on the WALL marker of an SU2 mesh.
+
+    Returns None when the file cannot be read.
+    """
     try:
         in_wall = False
         with open(su2_path, encoding="utf-8", errors="ignore") as fh:
