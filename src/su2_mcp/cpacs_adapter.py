@@ -300,6 +300,10 @@ def _mesh_step_with_gmsh(
     cfg = mesh_cfg or {}
     farfield_factor = cfg.get("farfield_factor", 10.0)
     surface_density = cfg.get("surface_density", 30)
+    # Absolute near-wall cell size in metres. When given it replaces the
+    # span-relative rule below, so a rung can be defined by cells across the
+    # chord (size = chord / n) instead of cells across the span.
+    surface_size_m = cfg.get("surface_size_m")
     algo_2d = cfg.get("algorithm_2d", 6)
 
     gmsh.initialize()
@@ -432,7 +436,10 @@ def _mesh_step_with_gmsh(
         if wall_surf_tags:
             gmsh.model.addPhysicalGroup(2, sorted(wall_surf_tags), name="WALL")
 
-        char_near = span / surface_density
+        if surface_size_m is not None:
+            char_near = float(surface_size_m)
+        else:
+            char_near = span / surface_density
         char_far = span
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_near / 3)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_far)
@@ -527,6 +534,21 @@ def _mesh_consistency_error(
             f"only {n_volume_elements:,} volume elements for {n_wall_faces:,} wall "
             "faces; the 3-D mesh did not fill the domain."
         )
+    return None
+
+
+def _count_su2_wall_faces(su2_path: str, wall_tag: str = "WALL") -> int | None:
+    """Count the surface elements on the WALL marker of an SU2 mesh (None if unreadable)."""
+    try:
+        in_wall = False
+        with open(su2_path, encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                if line.startswith("MARKER_TAG"):
+                    in_wall = wall_tag in line
+                elif line.startswith("MARKER_ELEMS") and in_wall:
+                    return int(line.split("=", 1)[1].strip())
+    except (OSError, ValueError):
+        return None
     return None
 
 
@@ -814,6 +836,7 @@ def run_adapter(
     wall_timeout_seconds: int | None = None,
     surface_density: int | None = None,
     farfield_factor: float | None = None,
+    surface_size_m: float | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """Full read→process→write cycle for the SU2 domain.
 
@@ -851,6 +874,12 @@ def run_adapter(
         if farfield_factor <= 0:
             raise ValueError(f"farfield_factor must be > 0, got {farfield_factor!r}")
         cfg["farfield_factor"] = float(farfield_factor)
+    if surface_size_m is not None:
+        if surface_size_m <= 0:
+            raise ValueError(
+                f"surface_size_m must be > 0 metres, got {surface_size_m!r}"
+            )
+        cfg["surface_size_m"] = float(surface_size_m)
 
     inputs = read_from_cpacs(cpacs_xml, flight_conditions)
 
@@ -900,6 +929,7 @@ def run_adapter(
         "cl_convergence_eps": cl_convergence_eps,
         "requested_surface_density": cfg["surface_density"],
         "requested_farfield_factor": cfg["farfield_factor"],
+        "requested_surface_size_m": cfg.get("surface_size_m"),
     }
 
     # Resolve mesh
@@ -925,10 +955,16 @@ def run_adapter(
             "farfield_factor": cfg["farfield_factor"],
             "algorithm_2d": 6,
         }
+        if cfg.get("surface_size_m") is not None:
+            mesh_cfg["surface_size_m"] = cfg["surface_size_m"]
+        size_note = (
+            f"surface_size_m={mesh_cfg['surface_size_m']:.4f}"
+            if "surface_size_m" in mesh_cfg
+            else f"surface_density={mesh_cfg['surface_density']}"
+        )
         print(
             f"      Meshing STEP → SU2 via Gmsh "
-            f"(preset={results['preset']}, "
-            f"surface_density={mesh_cfg['surface_density']})..."
+            f"(preset={results['preset']}, {size_note})..."
         )
         _LAST_MESH_FAILURE.clear()
         success = _mesh_step_with_gmsh(step_file, su2_mesh, mesh_cfg)
@@ -937,6 +973,8 @@ def run_adapter(
             results["mesh_source"] = "gmsh_from_step"
             results["mesh_surface_density"] = mesh_cfg["surface_density"]
             results["mesh_farfield_factor"] = mesh_cfg["farfield_factor"]
+            results["mesh_surface_size_m"] = mesh_cfg.get("surface_size_m")
+            results["mesh_wall_faces"] = _count_su2_wall_faces(su2_mesh)
             nelem = _count_su2_mesh_elements(su2_mesh)
             if nelem is not None:
                 results["mesh_n_elem"] = nelem
