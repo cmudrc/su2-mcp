@@ -1065,6 +1065,22 @@ def run_adapter(
         results["raw_CD"] = cd
     elif cl is not None and cd is not None:
         results["L_over_D"] = round(cl / cd, 4) if abs(cd) > 1e-12 else 0.0
+        # Dimensional lift is a derived quantity, and the RQ3 tests of
+        # 2026-09-21 showed why it has to be a tool output: asked for a lift
+        # force that no tool returned, the planner computed one itself with
+        # sea-level density at cruise altitude. The Euler coefficients depend
+        # on Mach and alpha only, so they are dimensionalised here with the
+        # ISA dynamic pressure at the flight condition the caller stated and
+        # the reference area the file states, and the basis travels with the
+        # number.
+        q_inf = _isa_dynamic_pressure_pa(inputs["altitude_ft"], inputs["mach"])
+        results["dynamic_pressure_pa"] = round(q_inf, 2)
+        results["lift_force_N"] = round(cl * q_inf * inputs["ref_area_m2"], 1)
+        results["drag_force_N"] = round(cd * q_inf * inputs["ref_area_m2"], 1)
+        results["force_basis"] = (
+            "coefficient x ISA dynamic pressure at altitude_ft and mach x "
+            "ref_area_m2 from the CPACS file"
+        )
         # One Euler point gives CL and CD only. Splitting CD into induced and
         # parasite parts needs an aspect ratio and an Oswald efficiency, so the
         # split is an estimate and is labelled as one. It is not a fitted polar.
@@ -1107,6 +1123,22 @@ def run_adapter(
 
     updated_xml = write_to_cpacs(cpacs_xml, results)
     return updated_xml, results
+
+
+def _isa_dynamic_pressure_pa(altitude_ft: float, mach: float) -> float:
+    """Dynamic pressure 0.5 rho V^2 from the ISA atmosphere (troposphere and
+    lower stratosphere, to 20 km) at the given geopotential altitude and Mach.
+    """
+    h = float(altitude_ft) * 0.3048
+    if h <= 11000.0:
+        temp = 288.15 - 0.0065 * h
+        pressure = 101325.0 * (temp / 288.15) ** 5.2559
+    else:
+        temp = 216.65
+        pressure = 22632.06 * math.exp(-9.80665 * (h - 11000.0) / (287.05 * temp))
+    rho = pressure / (287.05 * temp)
+    speed = float(mach) * math.sqrt(1.4 * 287.05 * temp)
+    return 0.5 * rho * speed * speed
 
 
 #: A body cannot produce negative drag, and no aircraft in this regime reaches a
@@ -1204,6 +1236,16 @@ def write_to_cpacs(cpacs_xml: str, results: dict[str, Any]) -> str:
         val = results.get(key)
         if val is not None:
             ET.SubElement(coeffs, tag).text = str(val)
+
+    for key, tag in (
+        ("dynamic_pressure_pa", "dynamicPressurePa"),
+        ("lift_force_N", "liftForceN"),
+        ("drag_force_N", "dragForceN"),
+        ("force_basis", "forceBasis"),
+    ):
+        val = results.get(key)
+        if val is not None:
+            ET.SubElement(aero_el, tag).text = str(val)
 
     if results.get("runtime_seconds") is not None:
         ET.SubElement(aero_el, "runtimeSeconds").text = str(
