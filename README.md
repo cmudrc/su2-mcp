@@ -13,13 +13,20 @@ results inspection through an MCP server.
   handling.
 - Result-file listing, base64 download, history CSV parsing, and surface
   sampling.
-- **Open-ended mesh refinement (2026-06-21):** the CPACS adapter exposes
-  optional `surface_density` and `farfield_factor` overrides on top of
-  the three named presets (`laptop`/`workstation`/`industry`), and
-  reports the actual `mesh_n_elem` cell count plus a `cauchy_triggered`
-  flag so callers can build a converge-until-plateau loop (see the
-  `SKILL_OPEN_ENDED_MESH.md` skill and `scripts/run_converged_su2.py`
-  in `cmudrc/agent-mcp`).
+- **Open-ended mesh refinement:** the CPACS adapter exposes optional
+  `surface_density`, `surface_size_m` and `farfield_factor` overrides on
+  top of the three named presets (`laptop`/`workstation`/`industry`), and
+  reports the actual `mesh_n_elem` cell count, the wall-face count and a
+  `cauchy_triggered` flag so callers can build a converge-until-plateau
+  loop (see `SKILL_OPEN_ENDED_MESH.md` in `cmudrc/agent-mcp` and
+  `scripts/run_converged_su2.py` in `cmudrc/aircraft-analysis`). Since
+  2026-09 the recommended rung is chord-defined: `surface_size_m =
+  ref_length / N`, halved per rung. `surface_density` is span-based and
+  under-resolves an airliner's chord.
+- **Derived outputs with their basis:** `lift_force_N`, `drag_force_N`
+  and `dynamic_pressure_pa` (ISA at the stated altitude and Mach, times the
+  file's reference area), and a structured `invalid_input` error for a
+  flight condition outside the Euler configuration's valid range.
 
 ## Install
 
@@ -114,7 +121,8 @@ python pipeline/shared_cpacs_orchestrator.py D150_v30.xml \
 python pipeline/shared_cpacs_orchestrator.py D150_v30.xml \
     --mcps tigl su2 --su2-density 120
 
-# Converged delivery: refine surface_density until CL/CD plateau
+# Converged delivery: refinement ladder until CL/CD plateau within 1 %
+# (chord-defined rungs: scripts/run_converged_su2.py --chord-cells-start 20)
 python pipeline/shared_cpacs_orchestrator.py D150_v30.xml \
     --mcps tigl su2 --su2-converge
 ```
