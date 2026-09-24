@@ -886,6 +886,10 @@ def run_adapter(
 
     inputs = read_from_cpacs(cpacs_xml, flight_conditions)
 
+    bad = _check_flight_condition(inputs)
+    if bad is not None:
+        return cpacs_xml, {"solver": "su2_cfd", "success": False, "error": bad}
+
     # SU2 normalises lift and drag by these, so they cannot be guessed: a
     # substituted reference area rescales every coefficient the run reports,
     # and the result still looks entirely plausible.
@@ -1123,6 +1127,45 @@ def run_adapter(
 
     updated_xml = write_to_cpacs(cpacs_xml, results)
     return updated_xml, results
+
+
+#: Flight-condition bounds. Outside them the Euler solver still runs and still
+#: returns numbers, which is the problem: on 2026-09-23 the planner passed
+#: mach=0 for an omitted Mach number, SU2 ran, and a ladder of coefficients of
+#: order 1e-11 was reported as a result.
+_MACH_RANGE = (0.05, 3.0)
+_AOA_RANGE_DEG = (-30.0, 30.0)
+_ALTITUDE_RANGE_FT = (-1500.0, 65000.0)
+
+
+def _check_flight_condition(inputs: dict[str, Any]) -> dict[str, Any] | None:
+    """Return a structured error when the flight condition is meaningless."""
+    checks = (
+        ("mach", inputs.get("mach"), _MACH_RANGE, ""),
+        ("aoa", inputs.get("aoa_deg"), _AOA_RANGE_DEG, " degrees"),
+        ("altitude_ft", inputs.get("altitude_ft"), _ALTITUDE_RANGE_FT, " ft"),
+    )
+    for name, value, (lo, hi), unit in checks:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            v = math.nan
+        if not (lo <= v <= hi):
+            return {
+                "type": "invalid_input",
+                "message": (
+                    f"Cannot run CFD: {name}={value!r} is outside the range "
+                    f"[{lo:g}, {hi:g}]{unit} this Euler configuration is valid for."
+                ),
+                "details": (
+                    "Nothing was run and nothing was written to CPACS. State the "
+                    "flight condition explicitly; SU2 would have produced "
+                    "meaningless coefficients for this value without failing."
+                ),
+                "parameter": name,
+                "value": value,
+            }
+    return None
 
 
 def _isa_dynamic_pressure_pa(altitude_ft: float, mach: float) -> float:
