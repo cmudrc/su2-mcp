@@ -25,19 +25,40 @@ def generate_mesh_from_step(
     output_mesh_name: str = "mesh.su2",
     geo_template_path: str | None = None,
     gmsh_timeout_seconds: int = 600,
+    surface_density: int = 30,
+    farfield_factor: float = 10.0,
+    surface_size_m: float | None = None,
 ) -> dict[str, object]:
     """Generate a 3D SU2 mesh from a STEP file and attach it to the given session.
 
-    Uses a .geo template that merges the STEP, builds an aircraft volume (surface
-    loop -> volume), creates a farfield box, and meshes the fluid domain with
-    FARFIELD and WALL markers. Requires the `gmsh` CLI to be on PATH.
+    By default this runs the same aircraft mesher the CPACS adapter and the
+    paper's runs use (Gmsh Python API: farfield box sized from the geometry,
+    fragment against the imported solids, FARFIELD and WALL markers, a 3D
+    algorithm fallback chain). It handles metre-scaled, multi-solid TiGL
+    exports with intersecting wing and fuselage solids, which the static
+    template cannot. Until 2026-09-30 the static millimetre-scaled template
+    was the only path, and a colleague's integration could not mesh the D150
+    through this endpoint at all.
+
+    Sizing matches the adapter: ``surface_density`` is the span-based preset
+    knob (laptop 30, workstation 80, industry 200), and ``surface_size_m``
+    is the absolute chord-based cell size that takes precedence when given.
+
+    Pass ``geo_template_path`` to use a custom .geo template through the
+    gmsh CLI instead (the template must Merge "model.step" and define
+    FARFIELD and WALL physical surfaces).
 
     Args:
         session_id: Existing SU2 session (create_su2_session first).
-        step_base64: Base64-encoded STEP file content (e.g. from TiGL export).
+        step_base64: Base64-encoded STEP file content (pass the cad_base64
+            field from tigl export_configuration_cad verbatim).
         output_mesh_name: Filename for the mesh in the session workdir.
-        geo_template_path: Optional path to a .geo file.
-        gmsh_timeout_seconds: Timeout for the gmsh subprocess.
+        geo_template_path: Optional path to a .geo file (CLI path).
+        gmsh_timeout_seconds: Timeout for the gmsh CLI subprocess.
+        surface_density: Span / near-field cell size ratio (default 30).
+        farfield_factor: Farfield box extent in spans (default 10).
+        surface_size_m: Absolute near-field cell size in metres; overrides
+            surface_density when set.
 
     Returns:
         Dict with mesh_path, success, and optional error.
@@ -57,9 +78,11 @@ def generate_mesh_from_step(
         )
 
     try:
-        step_bytes = base64.b64decode(step_base64, validate=True)
-    except Exception as exc:
-        return _error("Invalid step_base64", details=str(exc))
+        from su2_mcp.session_manager import _decode_base64_content
+
+        step_bytes = _decode_base64_content(step_base64, "step_base64")
+    except ValueError as exc:
+        return _error(str(exc), error_type="invalid_input")
 
     if not step_bytes.lstrip().startswith(b"ISO-10303-21"):
         return _error(
@@ -73,6 +96,42 @@ def generate_mesh_from_step(
         step_path = workdir / "model.step"
         step_path.write_bytes(step_bytes)
 
+        if geo_template_path is None:
+            from su2_mcp import cpacs_adapter as _adapter
+
+            out_mesh = workdir / output_mesh_name
+            _adapter._LAST_MESH_FAILURE.clear()
+            ok = _adapter._mesh_step_with_gmsh(
+                str(step_path),
+                str(out_mesh),
+                {
+                    "surface_density": int(surface_density),
+                    "farfield_factor": float(farfield_factor),
+                    "surface_size_m": surface_size_m,
+                    "algorithm_2d": 6,
+                },
+            )
+            if not ok or not out_mesh.exists() or out_mesh.stat().st_size == 0:
+                return _error(
+                    "aircraft meshing failed",
+                    error_type="meshing_failure",
+                    details=_adapter._LAST_MESH_FAILURE.get("reason"),
+                )
+            mesh_bytes = out_mesh.read_bytes()
+            mesh_b64 = base64.b64encode(mesh_bytes).decode("utf-8")
+            mesh_path = SESSION_MANAGER.update_mesh(
+                session_id, mesh_b64, output_mesh_name
+            )
+            return {
+                "success": True,
+                "mesh_path": str(mesh_path),
+                "mesh_bytes": len(mesh_bytes),
+                "mesher": "aircraft_auto (adapter gmsh API)",
+                "surface_density": int(surface_density),
+                "farfield_factor": float(farfield_factor),
+                "surface_size_m": surface_size_m,
+            }
+
         if geo_template_path:
             geo_path = Path(geo_template_path)
             if not geo_path.is_file():
@@ -81,8 +140,6 @@ def generate_mesh_from_step(
                     error_type="validation_error",
                 )
             geo_content = geo_path.read_text(encoding="utf-8")
-        else:
-            geo_content = _default_geo_content()
 
         geo_path = workdir / "mesh.geo"
         geo_path.write_text(geo_content, encoding="utf-8")
@@ -105,13 +162,23 @@ def generate_mesh_from_step(
                     "stderr": proc.stderr or "",
                 },
             )
-        if not out_mesh.exists():
+        mesh_bytes = out_mesh.read_bytes() if out_mesh.exists() else b""
+        if not mesh_bytes.lstrip().startswith(b"NDIME"):
+            # gmsh exits 0 and writes an empty file when the .geo failed
+            # mid-script (seen 2026-09-30 with a tag collision in a caller's
+            # template). An empty or malformed mesh must not become a
+            # "successful" session mesh that SU2 then refuses cryptically.
             return _error(
-                "gmsh did not produce the expected mesh file",
+                "gmsh exited 0 but produced no usable SU2 mesh (empty or "
+                "missing NDIME header); the .geo template likely failed "
+                "mid-script",
                 error_type="runtime_error",
+                details={
+                    "mesh_bytes": len(mesh_bytes),
+                    "stdout_tail": (proc.stdout or "")[-2000:],
+                    "stderr_tail": (proc.stderr or "")[-2000:],
+                },
             )
-
-        mesh_bytes = out_mesh.read_bytes()
         mesh_b64 = base64.b64encode(mesh_bytes).decode("utf-8")
         mesh_path = SESSION_MANAGER.update_mesh(session_id, mesh_b64, output_mesh_name)
         return {

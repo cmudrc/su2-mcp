@@ -34,6 +34,38 @@ class SessionRecord:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
+def _decode_base64_content(value: str, param: str) -> bytes:
+    """Decode a base64 *content* argument, refusing values that are clearly
+    file names, paths or URIs.
+
+    Found 2026-09-30 in a colleague's integration: a small planner passed
+    "mesh.su2" as initial_mesh and a file:// URI as STEP content, and the
+    only message back was base64's "Incorrect padding", which says nothing
+    about what the argument takes.
+    """
+    text = value.strip()
+    looks_like_path = (
+        text.startswith(("file://", "./", "../", "/", "~"))
+        or ("/" in text and " " not in text and len(text) < 512)
+        or (len(text) < 128 and "." in text and not text.endswith("="))
+    )
+    try:
+        return base64.b64decode(text, validate=True)
+    except Exception as exc:
+        hint = (
+            f"{param} takes the base64-encoded file CONTENT, not a file name "
+            "or path. Read the file and base64-encode its bytes, or pass the "
+            "*_base64 field another tool returned (for STEP geometry, the "
+            "cad_base64 field from tigl export_configuration_cad)."
+        )
+        if looks_like_path:
+            hint = (
+                f"{param} looks like a file name, path or URI ({text[:80]!r}), "
+                "but it " + hint.split(param + " ", 1)[1]
+            )
+        raise ValueError(hint) from exc
+
+
 class SessionManager:
     """Manage SU2 sessions and their resources."""
 
@@ -62,7 +94,7 @@ class SessionManager:
 
         mesh_path: Path | None = None
         if initial_mesh is not None:
-            mesh_bytes = base64.b64decode(initial_mesh)
+            mesh_bytes = _decode_base64_content(initial_mesh, "initial_mesh")
             mesh_path = workdir / mesh_file_name
             mesh_path.write_bytes(mesh_bytes)
             self._ensure_mesh_filename_in_config(config_path, mesh_file_name)
@@ -126,7 +158,7 @@ class SessionManager:
     ) -> Path:
         """Persist a mesh to the session directory and update bookkeeping."""
         record = self.require(session_id)
-        mesh_bytes = base64.b64decode(mesh_base64)
+        mesh_bytes = _decode_base64_content(mesh_base64, "mesh_base64")
         mesh_path = record.workdir / mesh_file_name
         mesh_path.write_bytes(mesh_bytes)
         record.mesh_path = mesh_path

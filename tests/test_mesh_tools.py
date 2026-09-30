@@ -49,7 +49,10 @@ def test_generate_mesh_from_step_rejects_invalid_base64(
     monkeypatch.setattr(mesh_tools.shutil, "which", lambda _name: "/usr/bin/gmsh")
 
     result = mesh_tools.generate_mesh_from_step(session_id, "not-base64")
-    assert result["error"]["message"] == "Invalid step_base64"
+    # Message now says what the argument takes (2026-09-30).
+    assert result["error"]["type"] == "invalid_input"
+    assert "step_base64" in result["error"]["message"]
+    assert "base64-encoded" in result["error"]["message"]
 
     session.close_su2_session(session_id, delete_workdir=True)
 

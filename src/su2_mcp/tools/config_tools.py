@@ -66,6 +66,8 @@ def set_mesh(
         return {"mesh_path": str(mesh_path)}
     except KeyError as exc:
         return _error(str(exc), error_type="not_found")
+    except ValueError as exc:
+        return _error(str(exc), error_type="invalid_input")
     except Exception as exc:  # pragma: no cover
         return _error("Failed to set mesh", details=str(exc))
 

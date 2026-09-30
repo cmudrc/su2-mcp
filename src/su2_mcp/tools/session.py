@@ -34,6 +34,8 @@ def create_su2_session(
             "config_path": str(record.config_path),
             "mesh_path": str(record.mesh_path) if record.mesh_path else None,
         }
+    except ValueError as exc:
+        return _error(str(exc), error_type="invalid_input")
     except Exception as exc:  # pragma: no cover - defensive
         return _error("Failed to create SU2 session", details=str(exc))
 
