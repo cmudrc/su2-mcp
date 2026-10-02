@@ -59,11 +59,18 @@ def test_run_solver_missing_binary_returns_structured_error() -> None:
     created = session.create_su2_session()
     session_id = str(created["session_id"])
 
-    result = run_tools.run_su2_solver(session_id=session_id, solver="missing_solver")
+    # Unknown names are refused up front (2026-10-02); a KNOWN binary that
+    # is absent from PATH still surfaces the runner's missing_binary error.
+    refused = run_tools.run_su2_solver(session_id=session_id, solver="missing_solver")
+    assert refused["error"]["type"] == "invalid_input"
 
-    assert result["success"] is False
-    assert result["error"]["type"] == "missing_binary"
-    assert result["exit_code"] == -1
+    import shutil as _sh
+
+    if _sh.which("SU2_DOT") is None:
+        result = run_tools.run_su2_solver(session_id=session_id, solver="SU2_DOT")
+        assert result["success"] is False
+        assert result["error"]["type"] == "missing_binary"
+        assert result["exit_code"] == -1
 
     session.close_su2_session(session_id, delete_workdir=True)
 
