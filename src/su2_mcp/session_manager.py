@@ -66,6 +66,25 @@ def _decode_base64_content(value: str, param: str) -> bytes:
         raise ValueError(hint) from exc
 
 
+def _require_su2_mesh_bytes(data: bytes, param: str) -> None:
+    """A mesh argument must actually be an SU2 mesh.
+
+    2026-10-02: a model-driven client passed STEP geometry bytes as
+    initial_mesh; they decode as valid base64, so the session happily held a
+    CAD file named mesh.su2 and the solver would later refuse it cryptically.
+    SU2 ASCII meshes start with an NDIME declaration; anything else is
+    refused here with the fix named.
+    """
+    head = data.lstrip()[:16]
+    if not head.startswith(b"NDIME"):
+        kind = "STEP geometry" if data.lstrip().startswith(b"ISO-10303-21") else "not an SU2 mesh"
+        raise ValueError(
+            f"{param} must be base64 of an SU2 mesh file (starts with "
+            f"'NDIME='); got {kind}. To mesh STEP geometry, call "
+            "generate_mesh_from_step with it instead."
+        )
+
+
 class SessionManager:
     """Manage SU2 sessions and their resources."""
 
@@ -95,6 +114,7 @@ class SessionManager:
         mesh_path: Path | None = None
         if initial_mesh is not None:
             mesh_bytes = _decode_base64_content(initial_mesh, "initial_mesh")
+            _require_su2_mesh_bytes(mesh_bytes, "initial_mesh")
             mesh_path = workdir / mesh_file_name
             mesh_path.write_bytes(mesh_bytes)
             self._ensure_mesh_filename_in_config(config_path, mesh_file_name)
@@ -159,6 +179,7 @@ class SessionManager:
         """Persist a mesh to the session directory and update bookkeeping."""
         record = self.require(session_id)
         mesh_bytes = _decode_base64_content(mesh_base64, "mesh_base64")
+        _require_su2_mesh_bytes(mesh_bytes, "mesh_base64")
         mesh_path = record.workdir / mesh_file_name
         mesh_path.write_bytes(mesh_bytes)
         record.mesh_path = mesh_path

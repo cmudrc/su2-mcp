@@ -788,11 +788,17 @@ def _run_su2_cfd(workdir: Path, config_name: str, timeout: int = 600) -> dict[st
             },
         }
 
-    LOGGER.info("Running SU2_CFD in %s ...", workdir)
+    from su2_mcp.mpi import parallel_decision
+
+    launch = parallel_decision("SU2_CFD")
+    LOGGER.info(
+        "Running SU2_CFD in %s (%s, %d rank(s): %s)...",
+        workdir, launch["mode"], launch["ranks"], launch["reason"],
+    )
     start = time.time()
     try:
         proc = subprocess.run(
-            [su2_exe, config_name],
+            [*launch["command"], config_name],
             cwd=str(workdir),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -818,6 +824,8 @@ def _run_su2_cfd(workdir: Path, config_name: str, timeout: int = 600) -> dict[st
             "exit_code": proc.returncode,
             "runtime_seconds": elapsed,
             "log_tail": tail,
+            "launch_mode": launch["mode"],
+            "mpi_ranks": launch["ranks"],
         }
     except subprocess.TimeoutExpired:
         return {

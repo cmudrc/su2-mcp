@@ -25,10 +25,13 @@ class SU2Runner:
         capture_log_lines: int,
     ) -> dict[str, object]:
         """Execute a SU2 solver and return structured metadata."""
+        from su2_mcp.mpi import parallel_decision
+
         start = time.time()
+        launch = parallel_decision(solver)
         try:
             process = subprocess.run(
-                [solver, str(config_path)],
+                [*launch["command"], str(config_path)],
                 cwd=self.workdir,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -41,6 +44,9 @@ class SU2Runner:
             tail_lines = "\n".join(output_text.splitlines()[-capture_log_lines:])
             residual_history = self._parse_history_files()
             return {
+                "launch_mode": launch["mode"],
+                "mpi_ranks": launch["ranks"],
+                "launch_reason": launch["reason"],
                 "success": process.returncode == 0,
                 "solver": solver,
                 "config_used": str(config_path),

@@ -69,6 +69,12 @@ def generate_mesh_from_step(
     except KeyError as exc:
         return _error(str(exc), error_type="not_found")
 
+    # gmsh picks the writer from the extension; a bare name dies inside gmsh
+    # with "Unknown output file format" (seen 2026-10-02 from a model-driven
+    # client). The tool owns its output format, so it enforces the suffix.
+    if not output_mesh_name.endswith(".su2"):
+        output_mesh_name = f"{output_mesh_name}.su2"
+
     gmsh_exe = shutil.which("gmsh")
     if not gmsh_exe:
         return _error(

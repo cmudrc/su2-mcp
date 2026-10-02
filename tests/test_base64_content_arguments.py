@@ -36,7 +36,7 @@ def test_file_uri_as_step_base64_is_a_typed_error():
 
 
 def test_real_base64_still_works():
-    mesh = base64.b64encode(b"fake mesh bytes").decode()
+    mesh = base64.b64encode(b"NDIME= 3\nNELEM= 0\n").decode()
     out = create_su2_session(base_name="t3", initial_mesh=mesh)
     assert "error" not in out
     close_su2_session(out["session_id"], delete_workdir=True)
@@ -80,3 +80,48 @@ def test_empty_gmsh_output_is_an_error(monkeypatch, tmp_path):
         assert "NDIME" in out["error"]["message"]
     finally:
         close_su2_session(rec.session_id, delete_workdir=True)
+
+
+def test_step_bytes_as_initial_mesh_are_refused():
+    """A CAD file is not a mesh, even when its base64 decodes cleanly."""
+    import base64 as _b64
+
+    step = _b64.b64encode(b"ISO-10303-21;\nHEADER;").decode()
+    out = create_su2_session(base_name="t6", initial_mesh=step)
+    assert out["error"]["type"] == "invalid_input"
+    assert "generate_mesh_from_step" in out["error"]["message"]
+
+
+def test_real_su2_mesh_bytes_still_accepted():
+    import base64 as _b64
+
+    mesh = _b64.b64encode(b"NDIME= 3\nNELEM= 0\n").decode()
+    out = create_su2_session(base_name="t7", initial_mesh=mesh)
+    assert "error" not in out
+    close_su2_session(out["session_id"], delete_workdir=True)
+
+
+def test_output_mesh_name_gets_su2_suffix(monkeypatch, tmp_path):
+    import base64 as _b64
+    import subprocess
+
+    from su2_mcp.tools import mesh_tools
+
+    rec = SESSION_MANAGER.create_session(base_name="t8")
+    monkeypatch.setattr(mesh_tools.shutil, "which", lambda _n: "/usr/bin/gmsh")
+    seen = {}
+
+    def fake_run(cmd, cwd, capture_output, text, timeout):
+        out = cmd[cmd.index("-o") + 1]
+        seen["out"] = out
+        with open(out, "wb") as fh:
+            fh.write(b"NDIME= 3\n")
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(mesh_tools.subprocess, "run", fake_run)
+    geo = tmp_path / "t.geo"; geo.write_text("// template")
+    step = _b64.b64encode(b"ISO-10303-21; x").decode()
+    out = mesh_tools.generate_mesh_from_step(rec.session_id, step, output_mesh_name="canards_mesh", geo_template_path=str(geo))
+    assert seen["out"].endswith("canards_mesh.su2")
+    assert out["success"] is True
+    close_su2_session(rec.session_id, delete_workdir=True)
