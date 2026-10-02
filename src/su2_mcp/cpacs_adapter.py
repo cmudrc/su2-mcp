@@ -457,6 +457,7 @@ def _mesh_step_with_gmsh(
                         pass
 
         meshed = False
+        algo_errors: list[str] = []
         for algo, name in [(4, "Netgen"), (1, "Delaunay"), (10, "HXT")]:
             gmsh.option.setNumber("Mesh.Algorithm3D", algo)
             gmsh.option.setNumber("Mesh.OptimizeNetgen", 1 if algo == 4 else 0)
@@ -469,6 +470,7 @@ def _mesh_step_with_gmsh(
                     break
             except Exception as exc:
                 LOGGER.debug("%s failed: %s", name, exc)
+                algo_errors.append(f"{name}: {type(exc).__name__}: {str(exc)[:160]}")
             try:
                 gmsh.model.mesh.generate(2)
             except Exception:
@@ -495,6 +497,14 @@ def _mesh_step_with_gmsh(
             return True
         else:
             LOGGER.error("All 3D meshing algorithms failed")
+            # The caller shows this reason to the model/user; a bare False
+            # surfaced as "details: null" (2026-10-02).
+            _set_mesh_failure(
+                "all 3D meshing algorithms failed on the fluid volume: "
+                + ("; ".join(algo_errors) if algo_errors else "no exception text")
+                + ". Common causes: a farfield_factor too small for the "
+                "geometry, or dirty/overlapping solids."
+            )
             return False
 
     finally:
@@ -882,8 +892,16 @@ def run_adapter(
             )
         cfg["surface_density"] = int(surface_density)
     if farfield_factor is not None:
-        if farfield_factor <= 0:
-            raise ValueError(f"farfield_factor must be > 0, got {farfield_factor!r}")
+        if farfield_factor < 2.0:
+            # 2026-10-02: a model-driven client passed farfield_factor=1; the
+            # farfield box then coincides with the aircraft's extent and the
+            # boolean/meshing step fails without a useful message. Below ~2
+            # spans the result is unusable even when it meshes.
+            raise ValueError(
+                f"farfield_factor must be >= 2 spans (default 10), got "
+                f"{farfield_factor!r}; the farfield box must enclose the "
+                "aircraft with room for the flow to recover"
+            )
         cfg["farfield_factor"] = float(farfield_factor)
     if surface_size_m is not None:
         if surface_size_m <= 0:

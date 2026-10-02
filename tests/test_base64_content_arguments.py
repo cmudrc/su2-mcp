@@ -139,3 +139,18 @@ def test_physics_name_as_solver_binary_is_refused():
         assert "config" in out["error"]["message"]
     finally:
         close_su2_session(rec.session_id, delete_workdir=True)
+
+
+def test_small_farfield_factor_is_refused():
+    """farfield_factor=1 puts the farfield on the aircraft; refuse it."""
+    import pytest as _pytest
+
+    from su2_mcp.cpacs_adapter import run_adapter
+
+    cpacs = (
+        "<cpacs><vehicles><aircraft><model>"
+        "<reference><area>1.0</area><length>1.0</length></reference>"
+        "</model></aircraft></vehicles></cpacs>"
+    )
+    with _pytest.raises(ValueError, match="farfield_factor must be >= 2"):
+        run_adapter(cpacs, mesh_path="x.su2", farfield_factor=1.0)
