@@ -154,3 +154,18 @@ def test_small_farfield_factor_is_refused():
     )
     with _pytest.raises(ValueError, match="farfield_factor must be >= 2"):
         run_adapter(cpacs, mesh_path="x.su2", farfield_factor=1.0)
+
+
+def test_nested_config_values_are_refused():
+    """A dict value would be written as its Python repr into the SU2 config."""
+    from su2_mcp.tools.config_tools import update_config_entries
+
+    rec = SESSION_MANAGER.create_session(base_name="t10")
+    try:
+        out = update_config_entries(rec.session_id, {"MACH_NUMBER": {"value": "0.78"}})
+        assert out["error"]["type"] == "invalid_input"
+        assert "scalars" in out["error"]["message"]
+        ok = update_config_entries(rec.session_id, {"MACH_NUMBER": 0.78, "AOA": 2.0})
+        assert sorted(ok["updated_keys"]) == ["AOA", "MACH_NUMBER"]
+    finally:
+        close_su2_session(rec.session_id, delete_workdir=True)

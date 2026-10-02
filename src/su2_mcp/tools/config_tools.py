@@ -37,6 +37,22 @@ def update_config_entries(
     create_if_missing: bool = True,
 ) -> dict[str, object]:
     """Update configuration entries for a session."""
+    # 2026-10-02, model-driven client: values arrived as nested objects
+    # ({"value": "0.78"}) and the dict repr was written verbatim into the
+    # solver config, which SU2 rejects one key at a time. Config values are
+    # scalars; refuse anything else with the shape shown.
+    bad = {
+        k: type(v).__name__
+        for k, v in updates.items()
+        if not isinstance(v, (str, int, float, bool))
+    }
+    if bad:
+        return _error(
+            "Config values must be scalars (string, number, or boolean), "
+            f"got non-scalar values for: {bad}. Pass e.g. "
+            '{"MACH_NUMBER": 0.78, "AOA": 2.0}.',
+            error_type="invalid_input",
+        )
     try:
         record = SESSION_MANAGER.require(session_id)
         updated = config_utils.update_config_entries(
