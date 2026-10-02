@@ -26,6 +26,18 @@ def run_su2_solver(
     capture_log_lines: int = 100,
 ) -> dict[str, object]:
     """Run a SU2 solver process and capture output metadata."""
+    # 2026-10-02, model-driven client: passed the config's physics value
+    # ("EULER") as the binary name. `solver` is the executable to launch;
+    # the physics lives in the config's SOLVER field.
+    known = ("SU2_CFD", "SU2_CFD_MPI", "SU2_DEF", "SU2_DOT", "SU2_SOL")
+    if solver not in known:
+        return _error(
+            f"solver={solver!r} is not an SU2 binary name. This argument "
+            f"names the executable to run (one of {', '.join(known)}; "
+            "default SU2_CFD). The physics model (EULER, RANS, ...) is set "
+            "by the SOLVER field inside the session's config file.",
+            error_type="invalid_input",
+        )
     try:
         record = SESSION_MANAGER.require(session_id)
         config_path = (

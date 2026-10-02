@@ -125,3 +125,17 @@ def test_output_mesh_name_gets_su2_suffix(monkeypatch, tmp_path):
     assert seen["out"].endswith("canards_mesh.su2")
     assert out["success"] is True
     close_su2_session(rec.session_id, delete_workdir=True)
+
+
+def test_physics_name_as_solver_binary_is_refused():
+    """'EULER' is a physics setting, not an executable."""
+    from su2_mcp.tools.run_tools import run_su2_solver
+
+    rec = SESSION_MANAGER.create_session(base_name="t9")
+    try:
+        out = run_su2_solver(rec.session_id, solver="EULER")
+        assert out["error"]["type"] == "invalid_input"
+        assert "SU2_CFD" in out["error"]["message"]
+        assert "config" in out["error"]["message"]
+    finally:
+        close_su2_session(rec.session_id, delete_workdir=True)
