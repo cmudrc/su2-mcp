@@ -49,6 +49,35 @@ def _links_against_mpi(binary_path: str) -> bool:
     return "libmpi" in out or "libpmpi" in out
 
 
+def _physical_cores() -> int:
+    """Physical core count. Open MPI's default slot count is physical cores,
+    so asking for one rank per hardware thread (os.cpu_count) fails with
+    "not enough slots" on hyperthreaded machines (seen 2026-10-05 on the lab
+    server: 12 cores, 24 threads)."""
+    try:
+        if platform.system() == "Darwin":
+            out = subprocess.run(
+                ["sysctl", "-n", "hw.physicalcpu"], capture_output=True, text=True, timeout=5
+            ).stdout.strip()
+            if out.isdigit():
+                return int(out)
+        elif shutil.which("lscpu"):
+            out = subprocess.run(
+                ["lscpu", "-p=CORE,SOCKET"], capture_output=True, text=True, timeout=5
+            ).stdout
+            cores = {ln for ln in out.splitlines() if ln and not ln.startswith("#")}
+            if cores:
+                return len(cores)
+    except Exception:
+        pass
+    return os.cpu_count() or 1
+
+
+def _extra_launcher_args() -> list[str]:
+    raw = os.environ.get("SU2_MPIRUN_ARGS", "").strip()
+    return raw.split() if raw else []
+
+
 def _requested_ranks() -> int:
     raw = os.environ.get("SU2_MPI_RANKS", "").strip()
     if not raw:
@@ -75,45 +104,44 @@ def parallel_decision(solver: str) -> dict[str, Any]:
             "reason": f"{solver} not found on PATH; left for the caller's error path",
         }
 
-    if requested == 1:
-        return {
-            "command": [exe],
-            "ranks": 1,
-            "mode": "serial",
-            "reason": "SU2_MPI_RANKS=1 forces serial",
-        }
-
     launcher = _mpi_launcher()
-    if launcher is None:
-        return {
-            "command": [exe],
-            "ranks": 1,
-            "mode": "serial",
-            "reason": "no mpirun/mpiexec on PATH",
-        }
-
     mpi_exe = None
     sibling = shutil.which(solver + "_MPI")
     if sibling:
         mpi_exe = sibling
     elif _links_against_mpi(exe):
         mpi_exe = exe
+
     if mpi_exe is None:
-        return {
-            "command": [exe],
-            "ranks": 1,
-            "mode": "serial",
-            "reason": (
+        reason = (
+            "SU2_MPI_RANKS=1 forces serial"
+            if requested == 1
+            else "no mpirun/mpiexec on PATH"
+            if launcher is None
+            else (
                 "binary is not MPI-capable (no *_MPI sibling and no MPI "
                 "library linked); running N copies of a serial solver would "
                 "repeat the same case N times"
-            ),
+            )
+        )
+        return {"command": [exe], "ranks": 1, "mode": "serial", "reason": reason}
+
+    if launcher is None:
+        # An MPI-linked binary started without a launcher runs as an MPI
+        # "singleton", which some Open MPI builds reject at start-up.
+        return {
+            "command": [mpi_exe],
+            "ranks": 1,
+            "mode": "serial",
+            "reason": "MPI-linked binary but no mpirun/mpiexec on PATH; started as a singleton",
         }
 
-    ranks = requested or (os.cpu_count() or 1)
+    # An MPI build is ALWAYS started through the launcher, even for one rank:
+    # Open MPI 4.1 singletons fail in MPI_Win_create (seen 2026-10-05).
+    ranks = 1 if requested == 1 else (requested or _physical_cores())
     return {
-        "command": [launcher, "-np", str(ranks), mpi_exe],
+        "command": [launcher, *_extra_launcher_args(), "-np", str(ranks), mpi_exe],
         "ranks": ranks,
-        "mode": "mpi",
+        "mode": "mpi" if ranks > 1 else "mpi_single_rank",
         "reason": f"{os.path.basename(mpi_exe)} via {os.path.basename(launcher)}",
     }

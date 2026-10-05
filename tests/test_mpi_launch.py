@@ -46,23 +46,49 @@ def test_mpi_with_sibling_binary(monkeypatch):
     assert d["command"][3] == "/bin/SU2_CFD_MPI"
 
 
-def test_rank_one_forces_serial(monkeypatch):
+def test_rank_one_on_mpi_build_still_uses_the_launcher(monkeypatch):
+    """Open MPI singletons can fail at start-up, so one rank goes via mpirun."""
     def which(n):
         return {"SU2_CFD": "/bin/SU2_CFD", "SU2_CFD_MPI": "/bin/m", "mpirun": "/bin/mpirun"}.get(n)
 
     monkeypatch.setattr(mpi.shutil, "which", which)
     monkeypatch.setenv("SU2_MPI_RANKS", "1")
-    assert mpi.parallel_decision("SU2_CFD")["mode"] == "serial"
+    d = mpi.parallel_decision("SU2_CFD")
+    assert d["mode"] == "mpi_single_rank"
+    assert d["command"] == ["/bin/mpirun", "-np", "1", "/bin/m"]
 
 
-def test_auto_ranks_use_cpu_count(monkeypatch):
+def test_rank_one_on_serial_build_runs_directly(monkeypatch):
+    monkeypatch.setattr(mpi.shutil, "which", lambda n: "/bin/SU2_CFD" if n == "SU2_CFD" else None)
+    monkeypatch.setenv("SU2_MPI_RANKS", "1")
+    d = mpi.parallel_decision("SU2_CFD")
+    assert d["mode"] == "serial" and d["command"] == ["/bin/SU2_CFD"]
+
+
+def test_auto_ranks_use_physical_cores(monkeypatch):
     def which(n):
         return {"SU2_CFD": "/bin/SU2_CFD", "SU2_CFD_MPI": "/bin/m", "mpirun": "/bin/mpirun"}.get(n)
 
     monkeypatch.setattr(mpi.shutil, "which", which)
+    monkeypatch.setattr(mpi, "_physical_cores", lambda: 12)
     monkeypatch.delenv("SU2_MPI_RANKS", raising=False)
     d = mpi.parallel_decision("SU2_CFD")
-    assert d["mode"] == "mpi" and d["ranks"] == (os.cpu_count() or 1)
+    assert d["mode"] == "mpi" and d["ranks"] == 12
+
+
+def test_extra_launcher_args(monkeypatch):
+    def which(n):
+        return {"SU2_CFD": "/bin/SU2_CFD", "SU2_CFD_MPI": "/bin/m", "mpirun": "/bin/mpirun"}.get(n)
+
+    monkeypatch.setattr(mpi.shutil, "which", which)
+    monkeypatch.setenv("SU2_MPI_RANKS", "6")
+    monkeypatch.setenv("SU2_MPIRUN_ARGS", "--bind-to none")
+    d = mpi.parallel_decision("SU2_CFD")
+    assert d["command"] == ["/bin/mpirun", "--bind-to", "none", "-np", "6", "/bin/m"]
+
+
+def test_physical_cores_is_positive():
+    assert mpi._physical_cores() >= 1
 
 
 def test_real_laptop_binary_is_detected_serial():
