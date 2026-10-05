@@ -6,15 +6,15 @@ case N times, so the decision logic must prove MPI capability first.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 
 from su2_mcp import mpi
 
 
 def test_serial_when_no_launcher(monkeypatch):
-    monkeypatch.setattr(mpi.shutil, "which", lambda n: "/bin/SU2_CFD" if n == "SU2_CFD" else None)
+    monkeypatch.setattr(
+        mpi.shutil, "which", lambda n: "/bin/SU2_CFD" if n == "SU2_CFD" else None
+    )
     d = mpi.parallel_decision("SU2_CFD")
     assert d["mode"] == "serial" and "mpirun" in d["reason"]
 
@@ -49,7 +49,11 @@ def test_mpi_with_sibling_binary(monkeypatch):
 def test_rank_one_on_mpi_build_still_uses_the_launcher(monkeypatch):
     """Open MPI singletons can fail at start-up, so one rank goes via mpirun."""
     def which(n):
-        return {"SU2_CFD": "/bin/SU2_CFD", "SU2_CFD_MPI": "/bin/m", "mpirun": "/bin/mpirun"}.get(n)
+        return {
+            "SU2_CFD": "/bin/SU2_CFD",
+            "SU2_CFD_MPI": "/bin/m",
+            "mpirun": "/bin/mpirun",
+        }.get(n)
 
     monkeypatch.setattr(mpi.shutil, "which", which)
     monkeypatch.setenv("SU2_MPI_RANKS", "1")
@@ -59,7 +63,9 @@ def test_rank_one_on_mpi_build_still_uses_the_launcher(monkeypatch):
 
 
 def test_rank_one_on_serial_build_runs_directly(monkeypatch):
-    monkeypatch.setattr(mpi.shutil, "which", lambda n: "/bin/SU2_CFD" if n == "SU2_CFD" else None)
+    monkeypatch.setattr(
+        mpi.shutil, "which", lambda n: "/bin/SU2_CFD" if n == "SU2_CFD" else None
+    )
     monkeypatch.setenv("SU2_MPI_RANKS", "1")
     d = mpi.parallel_decision("SU2_CFD")
     assert d["mode"] == "serial" and d["command"] == ["/bin/SU2_CFD"]
@@ -67,7 +73,11 @@ def test_rank_one_on_serial_build_runs_directly(monkeypatch):
 
 def test_auto_ranks_use_physical_cores(monkeypatch):
     def which(n):
-        return {"SU2_CFD": "/bin/SU2_CFD", "SU2_CFD_MPI": "/bin/m", "mpirun": "/bin/mpirun"}.get(n)
+        return {
+            "SU2_CFD": "/bin/SU2_CFD",
+            "SU2_CFD_MPI": "/bin/m",
+            "mpirun": "/bin/mpirun",
+        }.get(n)
 
     monkeypatch.setattr(mpi.shutil, "which", which)
     monkeypatch.setattr(mpi, "_physical_cores", lambda: 12)
@@ -78,7 +88,11 @@ def test_auto_ranks_use_physical_cores(monkeypatch):
 
 def test_extra_launcher_args(monkeypatch):
     def which(n):
-        return {"SU2_CFD": "/bin/SU2_CFD", "SU2_CFD_MPI": "/bin/m", "mpirun": "/bin/mpirun"}.get(n)
+        return {
+            "SU2_CFD": "/bin/SU2_CFD",
+            "SU2_CFD_MPI": "/bin/m",
+            "mpirun": "/bin/mpirun",
+        }.get(n)
 
     monkeypatch.setattr(mpi.shutil, "which", which)
     monkeypatch.setenv("SU2_MPI_RANKS", "6")

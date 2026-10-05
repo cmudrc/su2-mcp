@@ -24,7 +24,7 @@ import shutil
 import subprocess
 from typing import Any
 
-__all__ = ["build_solver_command", "parallel_decision"]
+__all__ = ["parallel_decision"]
 
 
 def _mpi_launcher() -> str | None:
@@ -36,7 +36,7 @@ def _mpi_launcher() -> str | None:
 
 
 def _links_against_mpi(binary_path: str) -> bool:
-    """True when the binary dynamically links an MPI library."""
+    """Return True when the binary dynamically links an MPI library."""
     tool = ["otool", "-L"] if platform.system() == "Darwin" else ["ldd"]
     if shutil.which(tool[0]) is None:
         return False
@@ -50,14 +50,20 @@ def _links_against_mpi(binary_path: str) -> bool:
 
 
 def _physical_cores() -> int:
-    """Physical core count. Open MPI's default slot count is physical cores,
-    so asking for one rank per hardware thread (os.cpu_count) fails with
-    "not enough slots" on hyperthreaded machines (seen 2026-10-05 on the lab
-    server: 12 cores, 24 threads)."""
+    """Return the physical core count.
+
+    Open MPI's default slot count is physical cores, so asking for one rank
+    per hardware thread (os.cpu_count) fails with "not enough slots" on
+    hyperthreaded machines (seen 2026-10-05 on the lab server: 12 cores,
+    24 threads).
+    """
     try:
         if platform.system() == "Darwin":
             out = subprocess.run(
-                ["sysctl", "-n", "hw.physicalcpu"], capture_output=True, text=True, timeout=5
+                ["sysctl", "-n", "hw.physicalcpu"],
+                capture_output=True,
+                text=True,
+                timeout=5,
             ).stdout.strip()
             if out.isdigit():
                 return int(out)
@@ -133,7 +139,10 @@ def parallel_decision(solver: str) -> dict[str, Any]:
             "command": [mpi_exe],
             "ranks": 1,
             "mode": "serial",
-            "reason": "MPI-linked binary but no mpirun/mpiexec on PATH; started as a singleton",
+            "reason": (
+                "MPI-linked binary but no mpirun/mpiexec on PATH; "
+                "started as a singleton"
+            ),
         }
 
     # An MPI build is ALWAYS started through the launcher, even for one rank:
