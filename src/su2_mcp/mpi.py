@@ -79,9 +79,44 @@ def _physical_cores() -> int:
     return os.cpu_count() or 1
 
 
-def _extra_launcher_args() -> list[str]:
-    raw = os.environ.get("SU2_MPIRUN_ARGS", "").strip()
-    return raw.split() if raw else []
+_LAUNCHER_FLAVOUR: dict[str, str] = {}
+
+
+def _launcher_flavour(launcher: str) -> str:
+    """Return "openmpi", "mpich" or "unknown" from the launcher's --version."""
+    if launcher not in _LAUNCHER_FLAVOUR:
+        try:
+            out = subprocess.run(
+                [launcher, "--version"], capture_output=True, text=True, timeout=10
+            )
+            text = (out.stdout + out.stderr).lower()
+        except Exception:
+            text = ""
+        _LAUNCHER_FLAVOUR[launcher] = (
+            "openmpi"
+            if "open mpi" in text
+            else "mpich"
+            if "mpich" in text or "hydra" in text
+            else "unknown"
+        )
+    return _LAUNCHER_FLAVOUR[launcher]
+
+
+def _extra_launcher_args(launcher: str) -> list[str]:
+    """Extra launcher flags: SU2_MPIRUN_ARGS if set, else a safe default.
+
+    Open MPI 4.1 with UCX fails in MPI_Win_create (SU2 aborts at start-up)
+    on some machines; excluding only the UCX one-sided component avoids it
+    without touching point-to-point communication. Seen 2026-10-05 on the
+    lab server for one-rank runs. SU2_MPIRUN_ARGS="" (set but empty)
+    disables the default.
+    """
+    if "SU2_MPIRUN_ARGS" in os.environ:
+        raw = os.environ["SU2_MPIRUN_ARGS"].strip()
+        return raw.split() if raw else []
+    if _launcher_flavour(launcher) == "openmpi":
+        return ["--mca", "osc", "^ucx"]
+    return []
 
 
 def _requested_ranks() -> int:
@@ -149,7 +184,13 @@ def parallel_decision(solver: str) -> dict[str, Any]:
     # Open MPI 4.1 singletons fail in MPI_Win_create (seen 2026-10-05).
     ranks = 1 if requested == 1 else (requested or _physical_cores())
     return {
-        "command": [launcher, *_extra_launcher_args(), "-np", str(ranks), mpi_exe],
+        "command": [
+            launcher,
+            *_extra_launcher_args(launcher),
+            "-np",
+            str(ranks),
+            mpi_exe,
+        ],
         "ranks": ranks,
         "mode": "mpi" if ranks > 1 else "mpi_single_rank",
         "reason": f"{os.path.basename(mpi_exe)} via {os.path.basename(launcher)}",

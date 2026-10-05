@@ -39,6 +39,7 @@ def test_mpi_with_sibling_binary(monkeypatch):
         }.get(n)
 
     monkeypatch.setattr(mpi.shutil, "which", which)
+    monkeypatch.setattr(mpi, "_launcher_flavour", lambda launcher: "unknown")
     monkeypatch.setenv("SU2_MPI_RANKS", "8")
     d = mpi.parallel_decision("SU2_CFD")
     assert d["mode"] == "mpi"
@@ -48,6 +49,7 @@ def test_mpi_with_sibling_binary(monkeypatch):
 
 def test_rank_one_on_mpi_build_still_uses_the_launcher(monkeypatch):
     """Open MPI singletons can fail at start-up, so one rank goes via mpirun."""
+
     def which(n):
         return {
             "SU2_CFD": "/bin/SU2_CFD",
@@ -56,6 +58,7 @@ def test_rank_one_on_mpi_build_still_uses_the_launcher(monkeypatch):
         }.get(n)
 
     monkeypatch.setattr(mpi.shutil, "which", which)
+    monkeypatch.setattr(mpi, "_launcher_flavour", lambda launcher: "unknown")
     monkeypatch.setenv("SU2_MPI_RANKS", "1")
     d = mpi.parallel_decision("SU2_CFD")
     assert d["mode"] == "mpi_single_rank"
@@ -113,3 +116,35 @@ def test_real_laptop_binary_is_detected_serial():
         pytest.skip("SU2_CFD not on PATH")
     d = mpi.parallel_decision("SU2_CFD")
     assert d["mode"] == "serial" or d["command"][0].endswith(("mpirun", "mpiexec"))
+
+
+def test_openmpi_gets_the_ucx_osc_workaround_by_default(monkeypatch):
+    def which(n):
+        return {
+            "SU2_CFD": "/bin/SU2_CFD",
+            "SU2_CFD_MPI": "/bin/m",
+            "mpirun": "/bin/mpirun",
+        }.get(n)
+
+    monkeypatch.setattr(mpi.shutil, "which", which)
+    monkeypatch.setattr(mpi, "_launcher_flavour", lambda launcher: "openmpi")
+    monkeypatch.delenv("SU2_MPIRUN_ARGS", raising=False)
+    monkeypatch.setenv("SU2_MPI_RANKS", "1")
+    d = mpi.parallel_decision("SU2_CFD")
+    assert d["command"] == ["/bin/mpirun", "--mca", "osc", "^ucx", "-np", "1", "/bin/m"]
+
+
+def test_empty_env_disables_the_default(monkeypatch):
+    def which(n):
+        return {
+            "SU2_CFD": "/bin/SU2_CFD",
+            "SU2_CFD_MPI": "/bin/m",
+            "mpirun": "/bin/mpirun",
+        }.get(n)
+
+    monkeypatch.setattr(mpi.shutil, "which", which)
+    monkeypatch.setattr(mpi, "_launcher_flavour", lambda launcher: "openmpi")
+    monkeypatch.setenv("SU2_MPIRUN_ARGS", "")
+    monkeypatch.setenv("SU2_MPI_RANKS", "2")
+    d = mpi.parallel_decision("SU2_CFD")
+    assert d["command"] == ["/bin/mpirun", "-np", "2", "/bin/m"]
