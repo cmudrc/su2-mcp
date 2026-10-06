@@ -950,6 +950,14 @@ def run_adapter(
 
     results: dict[str, Any] = {
         "solver": "su2_cfd",
+        # The configuration above is SOLVER= EULER, whatever the caller asked
+        # for. Asked for "a RANS analysis and the skin-friction drag", an
+        # agent called this run RANS and reported CDi as skin friction (dry
+        # run, 2026-10-05), so the result itself now says what it is.
+        "flow_model": (
+            "Euler (inviscid). No boundary layer, so CD contains no skin-friction "
+            "or other viscous drag. This tool cannot run RANS."
+        ),
         "mach": inputs["mach"],
         "aoa_deg": inputs["aoa_deg"],
         "altitude_ft": inputs["altitude_ft"],
@@ -1127,6 +1135,11 @@ def run_adapter(
             results["CDi"] = cdi
             results["CD0"] = round(cd - cdi, 6)
             results["polar_method"] = "single_point_oswald_split"
+            results["drag_split_note"] = (
+                f"CDi is an estimate of induced drag, CL^2/(pi*e*AR) with e = {e}; "
+                "CD0 = CD - CDi is the rest of the inviscid drag (wave and "
+                "numerical). Neither is skin friction."
+            )
             results["oswald_e"] = e
             results["aspect_ratio"] = ar
             results["aspect_ratio_source"] = inputs.get("aspect_ratio_source")
