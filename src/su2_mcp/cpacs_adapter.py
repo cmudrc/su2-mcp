@@ -803,7 +803,10 @@ def _run_su2_cfd(workdir: Path, config_name: str, timeout: int = 600) -> dict[st
     launch = parallel_decision("SU2_CFD")
     LOGGER.info(
         "Running SU2_CFD in %s (%s, %d rank(s): %s)...",
-        workdir, launch["mode"], launch["ranks"], launch["reason"],
+        workdir,
+        launch["mode"],
+        launch["ranks"],
+        launch["reason"],
     )
     start = time.time()
     try:
@@ -858,6 +861,7 @@ def run_adapter(
     surface_density: int | None = None,
     farfield_factor: float | None = None,
     surface_size_m: float | None = None,
+    ignore_geometry_findings: bool = False,
 ) -> tuple[str, dict[str, Any]]:
     """Full read→process→write cycle for the SU2 domain.
 
@@ -877,6 +881,11 @@ def run_adapter(
     used by the converged-delivery refinement loop (see
     ``scripts/run_converged_su2.py`` and ``SKILL_OPEN_ENDED_MESH.md``); the
     classic 3-preset path is unchanged when both overrides are ``None``.
+
+    A geometry fault the geometry stage wrote into the file (a wing on one
+    side only, a wing not touching the fuselage, a reference area that cannot
+    belong to the wing) is refused before anything is meshed, unless
+    ``ignore_geometry_findings`` is set by a caller who has read them.
 
     Runs the real SU2_CFD solver and parses results.
     """
@@ -911,6 +920,31 @@ def run_adapter(
         cfg["surface_size_m"] = float(surface_size_m)
 
     inputs = read_from_cpacs(cpacs_xml, flight_conditions)
+
+    if not ignore_geometry_findings:
+        faults = geometry_faults_from_cpacs(cpacs_xml)
+        if faults:
+            return cpacs_xml, {
+                "solver": "su2_cfd",
+                "success": False,
+                "error": {
+                    "type": "geometry_fault",
+                    "message": (
+                        "Refusing to mesh and solve: the geometry stage found "
+                        f"{len(faults)} fault(s) in this aircraft: "
+                        + "; ".join(f"{f['type']} ({f['component']})" for f in faults)
+                        + "."
+                    ),
+                    "details": (
+                        "The CFD would run on an aircraft that contradicts its own file "
+                        "and return plausible-looking coefficients for it. Fix the "
+                        "geometry and export it again, or pass "
+                        "ignore_geometry_findings=True to run anyway with the findings "
+                        "on record."
+                    ),
+                    "findings": faults,
+                },
+            }
 
     bad = _check_flight_condition(inputs)
     if bad is not None:
@@ -1175,6 +1209,33 @@ def run_adapter(
 _MACH_RANGE = (0.05, 3.0)
 _AOA_RANGE_DEG = (-30.0, 30.0)
 _ALTITUDE_RANGE_FT = (-1500.0, 65000.0)
+
+
+def geometry_faults_from_cpacs(cpacs_xml: str) -> list[dict[str, Any]]:
+    """Fault findings written by tigl-mcp's geometry check, if the file has any.
+
+    Read here rather than imported from tigl-mcp so this server stays
+    installable on its own; the element layout is tigl-mcp's
+    ``analysisResults/tigl/geometryChecks``.
+    """
+    try:
+        root = ET.fromstring(cpacs_xml)
+    except ET.ParseError:
+        return []
+    out = []
+    for f in root.findall(
+        ".//vehicles/aircraft/model/analysisResults/tigl/geometryChecks/finding"
+    ):
+        if (f.findtext("severity") or "") != "fault":
+            continue
+        out.append(
+            {
+                "type": f.findtext("type") or "",
+                "component": f.findtext("component") or "",
+                "message": f.findtext("message") or "",
+            }
+        )
+    return out
 
 
 def _check_flight_condition(inputs: dict[str, Any]) -> dict[str, Any] | None:
