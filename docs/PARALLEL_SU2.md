@@ -111,5 +111,5 @@ record the SU2 version with every result.
    agree.
 4. Put the build first on `PATH`; the pipeline picks it up automatically.
 
-Not yet done: a macOS build. The same recipe should work with Homebrew's
+The parallel build has not been tried on macOS. The same recipe should work with Homebrew's
 `open-mpi`, but we have not verified it.

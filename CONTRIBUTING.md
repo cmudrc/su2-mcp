@@ -51,4 +51,4 @@ pre-commit run --all-files
 - The default test suite validates deterministic local session/config/results flows
   without requiring SU2 binaries.
 - Real SU2 integration tests should stay optional and use the `integration_real`
-  marker once stable fixture assets are available.
+  marker.
