@@ -21,15 +21,22 @@ def _default_geo_content() -> str:
 
 def generate_mesh_from_step(
     session_id: str,
-    step_base64: str,
+    step_base64: str | None = None,
     output_mesh_name: str = "mesh.su2",
     geo_template_path: str | None = None,
     gmsh_timeout_seconds: int = 600,
     surface_density: int = 30,
     farfield_factor: float = 10.0,
     surface_size_m: float | None = None,
+    step_path: str | None = None,
 ) -> dict[str, object]:
     """Generate a 3D SU2 mesh from a STEP file and attach it to the given session.
+
+    Give the STEP either as ``step_path`` (the ``cad_path`` returned by
+    tigl export_configuration_cad; preferred, the servers share a machine) or
+    as ``step_base64`` (the file content). Until 2026-10-08 only the content
+    form existed, and a model-driven client that had to copy a 536,000-
+    character string between two tools copied 528 of them.
 
     By default this runs the same aircraft mesher the CPACS adapter and the
     paper's runs use (Gmsh Python API: farfield box sized from the geometry,
@@ -50,8 +57,9 @@ def generate_mesh_from_step(
 
     Args:
         session_id: Existing SU2 session (create_su2_session first).
-        step_base64: Base64-encoded STEP file content (pass the cad_base64
-            field from tigl export_configuration_cad verbatim).
+        step_base64: Base64-encoded STEP file content (the cad_base64 field
+            from tigl export_configuration_cad with include_base64=true).
+            Not needed when step_path is given.
         output_mesh_name: Filename for the mesh in the session workdir.
         geo_template_path: Optional path to a .geo file (CLI path).
         gmsh_timeout_seconds: Timeout for the gmsh CLI subprocess.
@@ -59,6 +67,8 @@ def generate_mesh_from_step(
         farfield_factor: Farfield box extent in spans (default 10).
         surface_size_m: Absolute near-field cell size in metres; overrides
             surface_density when set.
+        step_path: Path of the STEP file on this machine (the cad_path from
+            tigl export_configuration_cad). Preferred over step_base64.
 
     Returns:
         Dict with mesh_path, success, and optional error.
@@ -83,12 +93,33 @@ def generate_mesh_from_step(
             error_type="missing_dependency",
         )
 
-    try:
-        from su2_mcp.session_manager import _decode_base64_content
+    if step_path is not None and step_base64 is not None:
+        return _error(
+            "Give the STEP as step_path or as step_base64, not both",
+            error_type="invalid_input",
+        )
+    if step_path is not None:
+        src = Path(step_path)
+        if not src.is_file():
+            return _error(
+                f"step_path does not exist or is not a file: {step_path}",
+                error_type="invalid_input",
+                details="Pass the cad_path returned by tigl export_configuration_cad.",
+            )
+        step_bytes = src.read_bytes()
+    elif step_base64 is not None:
+        try:
+            from su2_mcp.session_manager import _decode_base64_content
 
-        step_bytes = _decode_base64_content(step_base64, "step_base64")
-    except ValueError as exc:
-        return _error(str(exc), error_type="invalid_input")
+            step_bytes = _decode_base64_content(step_base64, "step_base64")
+        except ValueError as exc:
+            return _error(str(exc), error_type="invalid_input")
+    else:
+        return _error(
+            "No STEP given: pass step_path (the cad_path from tigl "
+            "export_configuration_cad) or step_base64",
+            error_type="invalid_input",
+        )
 
     if not step_bytes.lstrip().startswith(b"ISO-10303-21"):
         return _error(
@@ -99,8 +130,8 @@ def generate_mesh_from_step(
 
     workdir = Path(tempfile.mkdtemp(prefix="su2_mesh_"))
     try:
-        step_path = workdir / "model.step"
-        step_path.write_bytes(step_bytes)
+        model_step = workdir / "model.step"
+        model_step.write_bytes(step_bytes)
 
         if geo_template_path is None:
             from su2_mcp import cpacs_adapter as _adapter
@@ -108,7 +139,7 @@ def generate_mesh_from_step(
             out_mesh = workdir / output_mesh_name
             _adapter._LAST_MESH_FAILURE.clear()
             ok = _adapter._mesh_step_with_gmsh(
-                str(step_path),
+                str(model_step),
                 str(out_mesh),
                 {
                     "surface_density": int(surface_density),
