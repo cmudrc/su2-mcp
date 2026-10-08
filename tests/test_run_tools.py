@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from su2_mcp.session_manager import LastRunMetadata
-from su2_mcp.tools import run_tools, session
+from su2_mcp.tools import config_tools, run_tools, session
 
 
 def test_run_su2_solver_records_last_run_metadata(
@@ -16,6 +16,10 @@ def test_run_su2_solver_records_last_run_metadata(
     """Successful runs should persist converted metadata in session state."""
     created = session.create_su2_session()
     session_id = str(created["session_id"])
+    # The seeded config leaves the case unset; a force-coefficient run needs it.
+    config_tools.update_config_entries(
+        session_id, {"MACH_NUMBER": 0.78, "AOA": 2.0, "REF_AREA": 1.0}
+    )
 
     captured: dict[str, object] = {}
 
@@ -78,6 +82,10 @@ def test_run_su2_solver_with_override_path_and_error_does_not_record(
     """Error payloads should pass through without overwriting last_run metadata."""
     created = session.create_su2_session()
     session_id = str(created["session_id"])
+    # The seeded config leaves the case unset; a force-coefficient run needs it.
+    config_tools.update_config_entries(
+        session_id, {"MACH_NUMBER": 0.78, "AOA": 2.0, "REF_AREA": 1.0}
+    )
 
     record = session.SESSION_MANAGER.require(session_id)
     record.last_run_metadata = LastRunMetadata(
@@ -139,6 +147,10 @@ def test_generate_deformed_mesh_success_and_error_paths(
     """SU2_DEF wrapper should normalize result types and propagate errors."""
     created = session.create_su2_session()
     session_id = str(created["session_id"])
+    # The seeded config leaves the case unset; a force-coefficient run needs it.
+    config_tools.update_config_entries(
+        session_id, {"MACH_NUMBER": 0.78, "AOA": 2.0, "REF_AREA": 1.0}
+    )
 
     calls: list[dict[str, object]] = []
 

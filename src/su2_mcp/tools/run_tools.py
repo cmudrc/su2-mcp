@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from su2_mcp.config_seed import REQUIRED_FOR_SU2_CFD, missing_required_keys
+from su2_mcp.config_utils import parse_config_file
 from su2_mcp.su2_runner import SU2Runner, build_last_run_metadata
 from su2_mcp.tools.session import SESSION_MANAGER, _error
 
@@ -24,8 +26,18 @@ def run_su2_solver(
     config_override_path: str | None = None,
     max_runtime_seconds: int = 600,
     capture_log_lines: int = 100,
+    allow_incomplete_config: bool = False,
 ) -> dict[str, object]:
-    """Run a SU2 solver process and capture output metadata."""
+    """Run a SU2 solver process and capture output metadata.
+
+    For SU2_CFD the configuration must set MARKER_MONITORING, MACH_NUMBER,
+    AOA and REF_AREA; otherwise the tool returns an error of type
+    `config_incomplete` and runs nothing. Without MARKER_MONITORING SU2
+    evaluates the force coefficients on no surface and writes CL = CD = 0.0
+    (two model-driven runs on 2026-10-08); without the other three it runs a
+    case nobody specified. `allow_incomplete_config=True` skips the check for
+    runs that want no force coefficients.
+    """
     # 2026-10-02, model-driven client: passed the config's physics value
     # ("EULER") as the binary name. `solver` is the executable to launch;
     # the physics lives in the config's SOLVER field.
@@ -45,6 +57,30 @@ def run_su2_solver(
             if config_override_path
             else record.config_path
         )
+        if (
+            solver in ("SU2_CFD", "SU2_CFD_MPI")
+            and not allow_incomplete_config
+            and config_path.exists()
+        ):
+            missing = missing_required_keys(parse_config_file(config_path))
+            if missing:
+                return _error(
+                    "The configuration is incomplete for a force-coefficient run: "
+                    + ", ".join(missing)
+                    + " not set. Without MARKER_MONITORING SU2 evaluates CL and CD "
+                    "on no surface and writes 0.0 for every iteration; without "
+                    "MACH_NUMBER and AOA no flight condition was specified; "
+                    "without REF_AREA SU2 normalises by 1.0 m^2. Set them with "
+                    "su2_update_config_entries (MARKER_MONITORING= ( WALL ) for "
+                    "meshes from su2_generate_mesh_from_step), or call su2_run_aero "
+                    "for the validated preset setup. Nothing was run.",
+                    error_type="config_incomplete",
+                    details={
+                        "missing": missing,
+                        "required": list(REQUIRED_FOR_SU2_CFD),
+                        "config_path": str(config_path),
+                    },
+                )
         runner = SU2Runner(record.workdir)
         result = runner.run(solver, config_path, max_runtime_seconds, capture_log_lines)
         if "error" not in result:

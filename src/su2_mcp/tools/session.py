@@ -20,7 +20,16 @@ def create_su2_session(
     initial_mesh: str | None = None,
     mesh_file_name: str = "mesh.su2",
 ) -> dict[str, object]:
-    """Create a new SU2 session and return basic paths."""
+    """Create a new SU2 session and return basic paths.
+
+    Without `initial_config` the session's config.cfg starts from the
+    project's laptop preset: Euler, ROE with MUSCL, CFL 1 adaptive, 250
+    iterations, FARFIELD and WALL markers as the mesher names them, forces
+    monitored on WALL, CL and CD in the history and on screen. The case is
+    not set: MACH_NUMBER, AOA and REF_AREA must be set with
+    su2_update_config_entries before su2_run_su2_solver will run. For the
+    validated one-call route use su2_run_aero instead.
+    """
     try:
         record = SESSION_MANAGER.create_session(
             base_name=base_name,

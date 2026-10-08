@@ -10,6 +10,8 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from su2_mcp.config_seed import seed_config_text
+
 
 @dataclass
 class LastRunMetadata:
@@ -106,9 +108,7 @@ class SessionManager:
         workdir = Path(tempfile.mkdtemp(prefix=prefix))
         config_path = workdir / "config.cfg"
 
-        config_text = (
-            initial_config or "% Minimal SU2 config\nMESH_FILENAME= mesh.su2\n"
-        )
+        config_text = initial_config or seed_config_text(mesh_file_name)
         config_path.write_text(config_text)
 
         mesh_path: Path | None = None
