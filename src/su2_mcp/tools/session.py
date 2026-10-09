@@ -28,7 +28,8 @@ def create_su2_session(
     monitored on WALL, CL and CD in the history and on screen. The case is
     not set: MACH_NUMBER, AOA and REF_AREA must be set with
     su2_update_config_entries before su2_run_su2_solver will run. For the
-    validated one-call route use su2_run_aero instead.
+    validated one-call route use su2_run_aero, which the aircraft-mcp gateway
+    offers (this server alone does not).
     """
     try:
         record = SESSION_MANAGER.create_session(

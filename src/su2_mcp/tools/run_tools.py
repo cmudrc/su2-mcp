@@ -72,8 +72,9 @@ def run_su2_solver(
                     "MACH_NUMBER and AOA no flight condition was specified; "
                     "without REF_AREA SU2 normalises by 1.0 m^2. Set them with "
                     "su2_update_config_entries (MARKER_MONITORING= ( WALL ) for "
-                    "meshes from su2_generate_mesh_from_step), or call su2_run_aero "
-                    "for the validated preset setup. Nothing was run.",
+                    "meshes from su2_generate_mesh_from_step), or, through the "
+                    "aircraft-mcp gateway, call su2_run_aero for the validated "
+                    "preset setup in one call. Nothing was run.",
                     error_type="config_incomplete",
                     details={
                         "missing": missing,
