@@ -87,17 +87,31 @@ def fit_polar(
     cd = np.array([p["CD"] for p in pts], dtype=float)
     A = np.column_stack([np.ones_like(cl), cl**2])
     coef, *_ = np.linalg.lstsq(A, cd, rcond=None)
+    cd0, k = float(coef[0]), float(coef[1])
+    method = f"least squares CD = CD0 + k CL^2 over {len(pts)} runs with aoa <= {aoa_max:g} deg"
+    pinned = False
+    if cd0 < 0.0:
+        # Inviscid drag on these meshes is tiny at low lift and climbs
+        # steeply with it, so a free quadratic can put the zero-lift
+        # intercept below zero. A negative CD0 is not a drag a mission can
+        # fly, so it is pinned at zero and k refitted through the origin;
+        # the method says so and the points stay in the file unchanged.
+        cd0, pinned = 0.0, True
+        k = float(np.sum(cd * cl**2) / np.sum(cl**4))
+        method += "; the free fit gave a negative CD0, so CD0 is pinned at 0 and k refitted with CD0 = 0"
+    fitted = cd0 + k * cl**2
     return {
-        "CD0": float(coef[0]),
-        "k": float(coef[1]),
-        "r_squared": _r2(cd, A @ coef),
+        "CD0": cd0,
+        "k": k,
+        "cd0_pinned": pinned,
+        "r_squared": _r2(cd, fitted),
         "n_points": len(pts),
         "cl_range": [float(cl.min()), float(cl.max())],
         "aoa_range_deg": [
             min(p["aoa_deg"] for p in pts),
             max(p["aoa_deg"] for p in pts),
         ],
-        "method": f"least squares CD = CD0 + k CL^2 over {len(pts)} runs with aoa <= {aoa_max:g} deg",
+        "method": method,
     }
 
 
@@ -128,6 +142,7 @@ def build_sweep(
     runs: list[dict[str, Any]],
     meta: dict[str, Any],
     aoa_fit_max: float = 8.0,
+    polar_aoa_max: float | None = None,
 ) -> dict[str, Any]:
     """Compose a sweep record from the server's run records and metadata.
 
@@ -150,7 +165,9 @@ def build_sweep(
         if r.get("error")
     ]
     sweep["fit"] = {
-        "polar": fit_polar(points, aoa_fit_max),
+        "polar": fit_polar(
+            points, polar_aoa_max if polar_aoa_max is not None else aoa_fit_max
+        ),
         "lift_curve": fit_lift_curve(points, aoa_fit_max),
     }
     return sweep
@@ -213,6 +230,9 @@ def write_sweep_to_cpacs(
             ("method", "method"),
         ):
             ET.SubElement(p_el, tag).text = str(pol[key])
+        ET.SubElement(p_el, "cd0Pinned").text = str(
+            bool(pol.get("cd0_pinned", False))
+        ).lower()
         ET.SubElement(
             p_el, "clRange"
         ).text = f"{pol['cl_range'][0]:.6g} {pol['cl_range'][1]:.6g}"
@@ -300,6 +320,8 @@ def read_sweeps(cpacs_xml: str) -> list[dict[str, Any]]:
                 "r_squared": _num(pol.findtext("rSquared")),
                 "n_points": int(float(pol.findtext("nPoints") or 0)),
                 "method": pol.findtext("method"),
+                "cd0_pinned": (pol.findtext("cd0Pinned") or "false").strip().lower()
+                == "true",
                 "cl_range": [
                     float(x) for x in (pol.findtext("clRange") or "0 0").split()
                 ],

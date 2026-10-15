@@ -117,3 +117,37 @@ def test_lookup_is_exact_on_a_run_interpolated_between_runs_and_refuses_outside(
 
 def test_file_without_sweeps_reads_empty():
     assert s.read_sweeps(CPACS) == []
+
+
+def test_negative_free_cd0_is_pinned_at_zero_and_said_so():
+    # drag tiny at low lift and climbing steeply, as inviscid runs on these meshes do
+    pts = [
+        {"aoa_deg": a, "CL": cl, "CD": cd}
+        for a, cl, cd in (
+            (2, 0.38, 0.0274),
+            (3, 0.498, 0.0457),
+            (4, 0.607, 0.0671),
+            (6, 0.786, 0.1161),
+        )
+    ]
+    fit = s.fit_polar(pts, aoa_max=8)
+    assert fit["cd0_pinned"] is True and fit["CD0"] == 0.0 and fit["k"] > 0
+    assert "pinned at 0" in fit["method"]
+    runs = [
+        {
+            **p,
+            "L_over_D": p["CL"] / p["CD"],
+            "cauchy_triggered": True,
+            "iterations": 1,
+            "runtime_seconds": 1.0,
+            "error": None,
+        }
+        for p in pts
+    ]
+    sw = s.build_sweep("ref", "reference", runs, _meta(), polar_aoa_max=5)
+    assert (
+        sw["fit"]["polar"]["n_points"] == 3 and sw["fit"]["lift_curve"]["n_points"] == 4
+    )
+    back = s.read_sweeps(s.write_sweep_to_cpacs(CPACS, sw))[0]
+    assert back["fit"]["polar"]["cd0_pinned"] is sw["fit"]["polar"]["cd0_pinned"]
+    assert back["fit"]["polar"]["k"] == pytest.approx(sw["fit"]["polar"]["k"])
