@@ -12,10 +12,10 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
+from test_wetted_area import _cube_mesh
 
 from su2_mcp import cpacs_adapter
 from su2_mcp.cpacs_adapter import _isa_dynamic_pressure_pa, run_adapter
-from test_wetted_area import _cube_mesh
 
 
 def test_isa_dynamic_pressure_sea_level_and_cruise() -> None:
