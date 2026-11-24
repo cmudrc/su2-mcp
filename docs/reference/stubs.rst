@@ -17,7 +17,9 @@ What remains optional
 
 - ``run_su2_solver`` and ``generate_deformed_mesh`` will report structured
   missing-binary errors when solver executables are unavailable.
-- ``generate_mesh_from_step`` requires the `gmsh` CLI.
+- ``generate_mesh_from_step`` requires the `gmsh` CLI. gmsh runs in a child
+  process; a crash inside gmsh is returned as a ``mesh_generation_failed``
+  error and the server keeps running.
 
 .. automodule:: su2_mcp.su2_availability
    :members:

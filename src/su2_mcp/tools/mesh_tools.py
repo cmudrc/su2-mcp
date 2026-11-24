@@ -51,6 +51,11 @@ def generate_mesh_from_step(
     knob (laptop 30, workstation 80, industry 200), and ``surface_size_m``
     is the absolute chord-based cell size that takes precedence when given.
 
+    gmsh runs in a child process. If gmsh ends that process (a crash inside
+    gmsh, seen 2026-11-23 on one aircraft at surface_density 20), the error
+    type is ``mesh_generation_failed``, the message names the settings and
+    the last lines gmsh printed, and the server and the session stay usable.
+
     Pass ``geo_template_path`` to use a custom .geo template through the
     gmsh CLI instead (the template must Merge "model.step" and define
     FARFIELD and WALL physical surfaces).
@@ -148,6 +153,19 @@ def generate_mesh_from_step(
                     "algorithm_2d": 6,
                 },
             )
+            failure = _adapter._LAST_MESH_FAILURE
+            if not ok and failure.get("type") == "mesh_generation_failed":
+                # gmsh ended its own process (the mesher runs in a child);
+                # the message names the settings and what gmsh printed.
+                return _error(
+                    failure["reason"],
+                    error_type="mesh_generation_failed",
+                    details={
+                        "surface_density": int(surface_density),
+                        "farfield_factor": float(farfield_factor),
+                        "surface_size_m": surface_size_m,
+                    },
+                )
             if not ok or not out_mesh.exists() or out_mesh.stat().st_size == 0:
                 return _error(
                     "aircraft meshing failed",

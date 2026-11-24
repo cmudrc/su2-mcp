@@ -292,10 +292,42 @@ def _set_mesh_failure(reason: str) -> None:
 def _mesh_step_with_gmsh(
     step_path: str, su2_path: str, mesh_cfg: dict[str, Any] | None = None
 ) -> bool:
+    """Generate a volume mesh from a STEP file with gmsh, in a child process.
+
+    The mesher itself is ``_mesh_step_in_this_process``. It runs in a child
+    (su2_mcp.mesh_child) because gmsh can end the process it runs in: on
+    2026-11-23 a segmentation fault inside gmsh, after its Netgen step failed
+    on one aircraft at surface_density 20, took the MCP server down with it.
+    A child that ends that way becomes a ``mesh_generation_failed`` reason in
+    ``_LAST_MESH_FAILURE`` and a False return.
+    """
+    import importlib.util
+
+    from su2_mcp import mesh_child
+
+    if importlib.util.find_spec("gmsh") is None:
+        raise ImportError("No module named 'gmsh'")
+    outcome = mesh_child.run_mesh_in_child(step_path, su2_path, mesh_cfg)
+    if outcome.raised:
+        raise RuntimeError(outcome.raised)
+    if outcome.crashed:
+        _LAST_MESH_FAILURE["type"] = "mesh_generation_failed"
+        _LAST_MESH_FAILURE["reason"] = outcome.reason or ""
+        LOGGER.error("Meshing failed: %s", outcome.reason)
+    elif outcome.reason:
+        # Already logged by the child when it refused.
+        _LAST_MESH_FAILURE["reason"] = outcome.reason
+    return outcome.ok
+
+
+def _mesh_step_in_this_process(
+    step_path: str, su2_path: str, mesh_cfg: dict[str, Any] | None = None
+) -> bool:
     """Generate a volume mesh from a STEP file using Gmsh Python API.
 
     Mirrors the proven logic from pipeline/tigl_to_su2.py's
-    create_volume_mesh_from_step().
+    create_volume_mesh_from_step(). Called in the child process only (see
+    ``_mesh_step_with_gmsh``): a hard failure inside gmsh ends the process.
     """
     import gmsh
 
@@ -1056,12 +1088,20 @@ def run_adapter(
             if nelem is not None:
                 results["mesh_n_elem"] = nelem
         else:
-            results["error"] = {
-                "type": "meshing_failure",
-                "message": "Gmsh volume meshing failed for the provided STEP file.",
-            }
-            if _LAST_MESH_FAILURE.get("reason"):
-                results["error"]["details"] = _LAST_MESH_FAILURE["reason"]
+            if _LAST_MESH_FAILURE.get("type") == "mesh_generation_failed":
+                # gmsh ended its process; the reason names the settings and
+                # what gmsh printed.
+                results["error"] = {
+                    "type": "mesh_generation_failed",
+                    "message": _LAST_MESH_FAILURE["reason"],
+                }
+            else:
+                results["error"] = {
+                    "type": "meshing_failure",
+                    "message": "Gmsh volume meshing failed for the provided STEP file.",
+                }
+                if _LAST_MESH_FAILURE.get("reason"):
+                    results["error"]["details"] = _LAST_MESH_FAILURE["reason"]
             results["converged"] = False
             updated_xml = write_to_cpacs(cpacs_xml, results)
             return updated_xml, results

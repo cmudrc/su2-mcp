@@ -91,7 +91,9 @@ pip install .[su2]
 The Python package is pure Python, but some tools rely on external executables:
 
 - `run_su2_solver` / `generate_deformed_mesh`: requires SU2 binaries on `PATH`
-- `generate_mesh_from_step`: requires `gmsh` on `PATH`
+- `generate_mesh_from_step`: requires `gmsh` on `PATH`. gmsh runs in a child
+  process: if gmsh itself crashes, the tool returns a
+  `mesh_generation_failed` error and the server keeps running
 
 ## Shared-CPACS Integration
 

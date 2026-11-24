@@ -97,3 +97,9 @@ include = ["su2_mcp*"]
 
 [tool.setuptools.package-data]
 su2_mcp = ["data/*.geo"]
+
+[tool.coverage.run]
+# The mesher runs in a child process (su2_mcp.mesh_child); measure it there too.
+patch = ["subprocess"]
+source = ["su2_mcp"]
+parallel = true
